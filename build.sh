@@ -1,16 +1,16 @@
 #!/bin/bash
 # ============================================================
 # Swara Aqua — Production Build Script
-# Run this on Hostinger SSH or locally before uploading
+# Run this on Hostinger SSH after cloning the repo
 # ============================================================
 set -e
 
-echo "📦 Installing backend dependencies..."
+echo "📦 Installing backend dependencies (including devDeps for tsc)..."
 cd backend
-npm install --omit=dev
-npm install typescript ts-node-dev --save-dev
+npm install
 echo "🔨 Building backend (TypeScript → JS)..."
 npm run build
+echo "✅ Backend built → dist/"
 cd ..
 
 echo "📦 Installing frontend dependencies..."
@@ -23,11 +23,9 @@ rm -rf ../backend/public
 cp -r dist ../backend/public
 cd ..
 
-echo "✅ Build complete!"
 echo ""
-echo "Next steps on Hostinger:"
-echo "  1. Upload the entire project to your hosting root"
-echo "  2. In hPanel → Node.js → set entry point: backend/dist/index.js"
-echo "  3. Set Node version to 18+"
-echo "  4. Add all env vars from backend/.env in hPanel environment variables"
-echo "  5. Click 'Restart' in the Node.js panel"
+echo "✅ Build complete! Now:"
+echo "  1. In hPanel → Node.js: set startup file to backend/dist/index.js"
+echo "  2. Set NODE_ENV=production in hPanel env vars"
+echo "  3. Add all other env vars from backend/.env"
+echo "  4. Click Restart"
