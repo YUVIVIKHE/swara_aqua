@@ -208,7 +208,7 @@ export const runMigrations = async (): Promise<void> => {
     const [cols] = await conn.query<any[]>(
       `SELECT COLUMN_NAME FROM information_schema.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'
-         AND COLUMN_NAME IN ('advance_balance','jar_rate')`
+         AND COLUMN_NAME IN ('advance_balance','jar_rate','wallet_balance')`
     );
     const existingCols = (cols as any[]).map((c: any) => c.COLUMN_NAME || c.column_name);
 
@@ -219,6 +219,10 @@ export const runMigrations = async (): Promise<void> => {
     if (!existingCols.includes('jar_rate')) {
       await conn.query(`ALTER TABLE users ADD COLUMN jar_rate DECIMAL(10,2) NOT NULL DEFAULT 50.00`);
       console.log('  ✅ Added users.jar_rate');
+    }
+    if (!existingCols.includes('wallet_balance')) {
+      await conn.query(`ALTER TABLE users ADD COLUMN wallet_balance DECIMAL(10,2) NOT NULL DEFAULT 0`);
+      console.log('  ✅ Added users.wallet_balance');
     }
 
     // ── Remove out_for_delivery status if it exists in the orders ENUM ─────────
@@ -262,17 +266,6 @@ export const runMigrations = async (): Promise<void> => {
         FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
-
-    // ── wallet_balance column on users ────────────────────────────────────────
-    const [walletCols] = await conn.query<any[]>(
-      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
-       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'
-         AND COLUMN_NAME = 'wallet_balance'`
-    );
-    if (!(walletCols as any[]).length) {
-      await conn.query(`ALTER TABLE users ADD COLUMN wallet_balance DECIMAL(10,2) NOT NULL DEFAULT 0`);
-      console.log('  ✅ Added users.wallet_balance');
-    }
 
     // ── wallet_transactions ───────────────────────────────────────────────────
     await conn.query(`

@@ -4,21 +4,24 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const pool = mysql.createPool({
-  host:             process.env.DB_HOST     || 'localhost',
-  port:             Number(process.env.DB_PORT) || 3306,
-  user:             process.env.DB_USER     || 'root',
-  password:         process.env.DB_PASSWORD || '',
-  database:         process.env.DB_NAME     || 'swara_aqua',
+  host:               process.env.DB_HOST     || 'localhost',
+  port:               Number(process.env.DB_PORT) || 3306,
+  user:               process.env.DB_USER     || 'root',
+  password:           process.env.DB_PASSWORD || '',
+  database:           process.env.DB_NAME     || 'swara_aqua',
   waitForConnections: true,
-  connectionLimit:  10,
-  queueLimit:       0,
+  connectionLimit:    10,
+  queueLimit:         0,
+  connectTimeout:     30000,
   multipleStatements: false,
+  // Hostinger uses SSL on shared hosting — disable cert verification
+  ssl: process.env.DB_SSL === 'false' ? undefined : { rejectUnauthorized: false },
 });
 
 // Quick connectivity check — non-fatal
 pool.getConnection()
   .then(conn => {
-    console.log(`✅ MySQL connected → ${process.env.DB_NAME || 'swara_aqua'}`);
+    console.log(`✅ MySQL connected → ${process.env.DB_NAME}`);
     conn.release();
   })
   .catch(err => {
