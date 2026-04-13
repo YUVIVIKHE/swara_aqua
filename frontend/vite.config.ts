@@ -1,19 +1,19 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+
+  return {
   plugins: [
     react(),
     VitePWA({
-      // 'generateSW' = plugin auto-generates the Workbox SW
-      // Firebase uses its own separate SW at /firebase-messaging-sw.js — no conflict
       registerType: 'autoUpdate',
-      injectRegister: null,           // We call registerSW() manually in main.tsx
+      injectRegister: null,
 
       includeAssets: ['sarvam.jpg', 'icons/*.png'],
 
-      // ── Web App Manifest ─────────────────────────────────────────────────────
       manifest: {
         name: 'Swara Aqua',
         short_name: 'SwaraAqua',
@@ -27,58 +27,32 @@ export default defineConfig({
         lang: 'en',
         categories: ['food', 'shopping', 'utilities'],
         icons: [
-          {
-            src: '/icons/icon-192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any',
-          },
-          {
-            src: '/icons/icon-192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-          {
-            src: '/icons/icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any',
-          },
-          {
-            src: '/icons/icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
         screenshots: [
           {
             src: '/icons/screenshot.png',
             sizes: '390x844',
             type: 'image/png',
-            form_factor: 'narrow',         // Required by Chrome 119+ for install prompt
+            form_factor: 'narrow',
             label: 'Swara Aqua home screen',
           },
         ],
       },
 
-      // ── Workbox config ───────────────────────────────────────────────────────
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-
-        // CRITICAL: SPA fallback — any deep URL returns index.html
-        // Without this, refreshing /customer/orders on Hostinger returns 404
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [
-          /^\/api\//,                   // Never intercept API calls
-          /^\/firebase-messaging-sw/,   // Don't intercept Firebase SW
+          /^\/api\//,
+          /^\/firebase-messaging-sw/,
+          /^\/uploads\//,
         ],
-
         cleanupOutdatedCaches: true,
-
         runtimeCaching: [
-          // API — network first, 5 min cache fallback
           {
             urlPattern: /^https?:\/\/.*\/api\/.*/i,
             handler: 'NetworkFirst',
@@ -88,13 +62,11 @@ export default defineConfig({
               networkTimeoutSeconds: 10,
             },
           },
-          // Google Fonts
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'google-fonts-cache' },
           },
-          // Images
           {
             urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
             handler: 'CacheFirst',
@@ -106,7 +78,6 @@ export default defineConfig({
         ],
       },
 
-      // ── Dev mode — enable SW in development for local testing ────────────────
       devOptions: {
         enabled: true,
         type: 'module',
@@ -115,10 +86,31 @@ export default defineConfig({
     }),
   ],
 
+  // In production the frontend is served by Express at the same origin,
+  // so no proxy needed. In dev, proxy /api to local backend.
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:5000',
+      '/api': {
+        target: env.VITE_API_URL || 'http://localhost:5000',
+        changeOrigin: true,
+      },
     },
   },
+
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor:   ['react', 'react-dom', 'react-router-dom'],
+          charts:   ['recharts'],
+          motion:   ['framer-motion'],
+          firebase: ['firebase/app', 'firebase/messaging'],
+        },
+      },
+    },
+  },
+  };
 });

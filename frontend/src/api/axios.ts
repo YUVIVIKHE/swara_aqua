@@ -1,8 +1,15 @@
 import axios from 'axios';
 
+// In production the frontend is served by the same Express server,
+// so relative /api works. In dev, Vite proxies /api → localhost:5000.
+const BASE_URL = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
 
 // Attach token to every request
@@ -22,7 +29,7 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refreshToken');
       if (refreshToken) {
         try {
-          const { data } = await axios.post('/api/auth/refresh', { refreshToken });
+          const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
           localStorage.setItem('accessToken', data.accessToken);
           original.headers.Authorization = `Bearer ${data.accessToken}`;
           return api(original);

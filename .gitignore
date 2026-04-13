@@ -8,11 +8,14 @@ frontend/.env
 
 # Build output
 backend/dist/
+backend/public/
 frontend/dist/
+frontend/dev-dist/
 
 # Logs
 *.log
 npm-debug.log*
+logs/
 
 # OS
 .DS_Store

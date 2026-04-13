@@ -1,0 +1,6 @@
+DirectoryIndex disabled
+
+RewriteEngine On
+
+# Proxy everything to Node.js app running on port 5000
+RewriteRule ^(.*)$ http://localhost:5000/$1 [P,L]

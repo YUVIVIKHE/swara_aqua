@@ -21,10 +21,25 @@ import './config/firebase';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const isProd = process.env.NODE_ENV === 'production';
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
-app.use(express.json());
+// ── CORS ──────────────────────────────────────────────────────────────────────
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim());
 
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (mobile apps, curl, SSE)
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: ${origin} not allowed`));
+  },
+  credentials: true,
+}));
+
+app.use(express.json({ limit: '10mb' }));
+
+// ── API routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationRoutes);
@@ -36,21 +51,37 @@ app.use('/api/banners',       bannerRoutes);
 app.use('/api/events',        eventsRoutes);
 app.use('/api/wallet',        walletRoutes);
 
-// Serve uploaded files statically
+// ── Static files ──────────────────────────────────────────────────────────────
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-import { getClientCount } from './services/sse.service';
-app.get('/health', (_req, res) => res.json({ status: 'ok', sseClients: getClientCount() }));
+// ── Serve React SPA in production ─────────────────────────────────────────────
+if (isProd) {
+  const distPath = path.join(process.cwd(), 'public');
+  app.use(express.static(distPath));
+  // SPA fallback — all non-API routes return index.html
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
+// ── Health check ──────────────────────────────────────────────────────────────
+import { getClientCount } from './services/sse.service';
+app.get('/health', (_req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV, sseClients: getClientCount() }));
+
+// ── Global error handler ──────────────────────────────────────────────────────
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ message: 'Internal server error' });
 });
 
+// ── Start ─────────────────────────────────────────────────────────────────────
 const start = async () => {
   await runMigrations();
   app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
     startCronJobs();
   });
 };
