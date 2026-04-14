@@ -1,6 +1,14 @@
+Options -Indexes
 DirectoryIndex disabled
 
 RewriteEngine On
 
-# Proxy everything to Node.js app running on port 5000
-RewriteRule ^(.*)$ http://localhost:5000/$1 [P,L]
+# Don't rewrite existing files/dirs
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Proxy everything to Node.js
+RewriteRule ^(.*)$ http://127.0.0.1:5000/$1 [P,L,QSA]
+
+# Required for mod_proxy
+ProxyPassReverse / http://127.0.0.1:5000/
