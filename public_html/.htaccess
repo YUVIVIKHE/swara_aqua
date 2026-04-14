@@ -1,14 +1,11 @@
-Options -Indexes
-DirectoryIndex disabled
+PassengerEnabled on
+PassengerAppRoot /home/u182510996/swara_aqua/backend
+PassengerStartupFile app.js
+PassengerAppType node
+PassengerNodejs /usr/bin/node
 
+# Serve everything through Passenger
+Options -MultiViews
 RewriteEngine On
-
-# Don't rewrite existing files/dirs
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-
-# Proxy everything to Node.js
-RewriteRule ^(.*)$ http://127.0.0.1:5000/$1 [P,L,QSA]
-
-# Required for mod_proxy
-ProxyPassReverse / http://127.0.0.1:5000/
+RewriteRule ^ index.html [QSA,L]
