@@ -5,6 +5,6 @@
   "scripts": {
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "cd backend && npm install && npm run build",
-    "build:frontend": "cd frontend && npm install && ./node_modules/.bin/vite build && cp -r dist ../backend/public"
+    "build:frontend": "cd frontend && npm install && npm run build && cp -r dist ../backend/public"
   }
 }
