@@ -1,6 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import dotenv from 'dotenv';
+
+// Load .env relative to this file's location, not process.cwd()
+// This is critical for Hostinger Passenger which changes cwd
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
 import notificationRoutes from './routes/notification.routes';
@@ -11,12 +17,9 @@ import addressRoutes from './routes/address.routes';
 import bannerRoutes from './routes/banner.routes';
 import eventsRoutes from './routes/events.routes';
 import walletRoutes from './routes/wallet.routes';
-import path from 'path';
 import { startCronJobs } from './services/cron.service';
 import { runMigrations } from './config/migrate';
 import { Request, Response, NextFunction } from 'express';
-
-dotenv.config();
 import './config/firebase';
 
 const app = express();
@@ -51,13 +54,14 @@ app.use('/api/events',        eventsRoutes);
 app.use('/api/wallet',        walletRoutes);
 
 // ── Static files ──────────────────────────────────────────────────────────────
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Use __dirname so paths work regardless of where Passenger sets cwd
+const appRoot = path.join(__dirname, '..');
+app.use('/uploads', express.static(path.join(appRoot, 'uploads')));
 
 // ── Serve React SPA in production ─────────────────────────────────────────────
 if (isProd) {
-  const distPath = path.join(process.cwd(), 'public');
+  const distPath = path.join(appRoot, 'public');
   app.use(express.static(distPath));
-  // SPA fallback — all non-API routes return index.html
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
       return next();

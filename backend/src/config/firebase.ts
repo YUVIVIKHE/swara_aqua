@@ -1,7 +1,5 @@
 import admin from 'firebase-admin';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv already loaded in index.ts before this import
 
 // Initialize only once
 if (!admin.apps.length) {
