@@ -1,16 +1,23 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import pool from '../config/db';
-import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import { RowDataPacket } from 'mysql2/promise';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import * as NotifService from '../services/notification.service';
 import * as SSE from '../services/sse.service';
 
-const razorpay = new Razorpay({
-  key_id:     process.env.RAZORPAY_KEY_ID     || '',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || '',
-});
+// Lazy init — only created when first request comes in so missing keys don't crash startup
+let _razorpay: Razorpay | null = null;
+const getRazorpay = () => {
+  if (!_razorpay) {
+    const key_id     = process.env.RAZORPAY_KEY_ID     || '';
+    const key_secret = process.env.RAZORPAY_KEY_SECRET || '';
+    if (!key_id || !key_secret) throw new Error('Razorpay keys not configured in environment');
+    _razorpay = new Razorpay({ key_id, key_secret });
+  }
+  return _razorpay;
+};
 
 const notify = (fn: () => Promise<void>) =>
   fn().catch(err => console.warn('FCM (non-fatal):', err?.message));
@@ -45,7 +52,7 @@ export const createTopupOrder = async (req: AuthRequest, res: Response): Promise
       res.status(400).json({ message: 'amount must be >= 1' }); return;
     }
 
-    const order = await razorpay.orders.create({
+    const order = await getRazorpay().orders.create({
       amount:   Math.round(amount * 100), // paise
       currency: 'INR',
       receipt:  `wallet_${req.user!.id}_${Date.now()}`,
