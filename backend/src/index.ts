@@ -19,6 +19,7 @@ import bannerRoutes from './routes/banner.routes';
 import eventsRoutes from './routes/events.routes';
 import walletRoutes from './routes/wallet.routes';
 import { startCronJobs } from './services/cron.service';
+import { startKeepAlive } from './services/keepalive.service';
 import { runMigrations } from './config/migrate';
 import { Request, Response, NextFunction } from 'express';
 import './config/firebase';
@@ -105,6 +106,7 @@ const start = async () => {
   app.listen(port, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${port} [${process.env.NODE_ENV || 'development'}]`);
     startCronJobs();
+    if (isProd) startKeepAlive();
   });
 };
 
