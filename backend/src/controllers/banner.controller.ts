@@ -58,8 +58,8 @@ export const createBanner = async (req: AuthRequest, res: Response): Promise<voi
     if (!req.file) { res.status(400).json({ message: 'Image required' }); return; }
 
     const { title, link_url, sort_order } = req.body;
-    const baseUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`;
-    const image_url = `${baseUrl}/uploads/banners/${req.file.filename}`;
+    // Store relative path only — avoids hardcoding localhost or domain
+    const image_url = `/uploads/banners/${req.file.filename}`;
 
     const [result] = await pool.query(
       `INSERT INTO banners (title, image_url, link_url, sort_order, created_by)
