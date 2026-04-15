@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import path from 'path';
 import dotenv from 'dotenv';
 
@@ -24,6 +25,9 @@ import './config/firebase';
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
+
+// ── Compression — gzip all responses ─────────────────────────────────────────
+app.use(compression());
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
@@ -60,7 +64,16 @@ app.use('/uploads', express.static(path.join(appRoot, 'uploads')));
 // ── Serve React SPA in production ─────────────────────────────────────────────
 if (isProd) {
   const distPath = path.join(appRoot, 'public');
-  app.use(express.static(distPath));
+  // Cache static assets for 1 year, HTML for no-cache
+  app.use(express.static(distPath, {
+    maxAge: '1y',
+    etag: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    },
+  }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
       return next();

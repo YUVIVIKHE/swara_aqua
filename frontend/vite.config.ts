@@ -101,13 +101,29 @@ export default defineConfig(({ mode }) => {
   build: {
     outDir: 'dist',
     sourcemap: false,
+    minify: 'terser',
+    terserOptions: {
+      compress: { drop_console: true, drop_debugger: true },
+    },
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor:   ['react', 'react-dom', 'react-router-dom'],
-          charts:   ['recharts'],
-          motion:   ['framer-motion'],
-          firebase: ['firebase/app', 'firebase/messaging'],
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('react-router-dom')) {
+            return 'vendor';
+          }
+          if (id.includes('recharts') || id.includes('d3-')) {
+            return 'charts';
+          }
+          if (id.includes('framer-motion')) {
+            return 'motion';
+          }
+          if (id.includes('firebase')) {
+            return 'firebase';
+          }
+          if (id.includes('lucide-react')) {
+            return 'icons';
+          }
         },
       },
     },
