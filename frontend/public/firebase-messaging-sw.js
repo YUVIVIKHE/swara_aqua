@@ -1,11 +1,7 @@
 // Firebase Cloud Messaging Service Worker
-// This file MUST be at the root of your public folder (served at /firebase-messaging-sw.js)
-
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
-// These values are injected at runtime via the VITE env — for the SW we hardcode them.
-// Replace with your actual Firebase config values.
 firebase.initializeApp({
   apiKey:            'AIzaSyBuM5DkMqfW-STRiEyi3OCIVWk8E3aHz7g',
   authDomain:        'waterdelivery-a2126.firebaseapp.com',
@@ -17,34 +13,34 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Handle background messages (app in background or killed)
 messaging.onBackgroundMessage((payload) => {
-  console.log('[SW] Background message received:', payload);
+  console.log('[SW] Background message:', payload);
 
-  const { title, body } = payload.notification || {};
-  const data = payload.data || {};
+  const title   = payload.notification?.title || payload.data?.title || 'Swara Aqua';
+  const body    = payload.notification?.body  || payload.data?.body  || '';
+  const type    = payload.data?.type || 'general';
+  const orderId = payload.data?.orderId || '';
 
-  const notificationTitle = title || 'Swara Aqua';
-  const notificationOptions = {
-    body:    body || '',
-    icon:    '/icons/icon-192.png',
-    badge:   '/icons/icon-192.png',
-    vibrate: [200, 100, 200],
-    requireInteraction: true,
-    data:    data,
+  self.registration.showNotification(title, {
+    body,
+    icon:               '/icons/icon-192.png',
+    badge:              '/icons/icon-192.png',
+    image:              '/icons/icon-512.png',
+    vibrate:            [200, 100, 200, 100, 200],
+    requireInteraction: false,
+    tag:                `swara-${type}-${orderId || Date.now()}`,
+    renotify:           true,
+    silent:             false,
+    data:               { type, orderId, url: self.location.origin },
     actions: [
-      { action: 'open',    title: 'Open App' },
-      { action: 'dismiss', title: 'Dismiss'  },
+      { action: 'open',    title: '📱 Open App' },
+      { action: 'dismiss', title: 'Dismiss'     },
     ],
-  };
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  });
 });
 
-// Handle notification click
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
   if (event.action === 'dismiss') return;
 
   const data = event.notification.data || {};
@@ -52,25 +48,23 @@ self.addEventListener('notificationclick', (event) => {
 
   const screenMap = {
     order:    '/customer/orders',
-    payment:  '/customer/payments',
+    payment:  '/customer/wallet',
     delivery: '/staff/deliveries',
     approval: '/admin/users',
-    stock:    '/admin',
+    stock:    '/admin/inventory',
     general:  '/',
   };
 
-  const url = (self.location.origin) + (screenMap[type] || '/');
+  const url = self.location.origin + (screenMap[type] || '/');
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Focus existing tab if open
-      for (const client of clientList) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           client.navigate(url);
           return client.focus();
         }
       }
-      // Otherwise open new tab
       if (clients.openWindow) return clients.openWindow(url);
     })
   );
