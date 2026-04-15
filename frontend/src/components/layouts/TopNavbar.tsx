@@ -5,6 +5,7 @@ import { Bell, Search, ChevronDown, LogOut, User, CheckCheck, Wallet } from 'luc
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import api from '../../api/axios';
+import { playNotificationSound } from '../../utils/notificationSound';
 
 interface Notification {
   id: number; title: string; body: string;
@@ -46,9 +47,13 @@ export const TopNavbar = ({ title }: { title: string }) => {
     try {
       const { data } = await api.get('/notifications');
       setNotifications(data.notifications);
+      // Play sound if new unread notifications arrived
+      if (data.unreadCount > unreadCount) {
+        playNotificationSound();
+      }
       setUnreadCount(data.unreadCount);
     } catch {}
-  }, []);
+  }, [unreadCount]);
 
   useEffect(() => {
     fetchNotifications();

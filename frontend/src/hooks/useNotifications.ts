@@ -4,6 +4,7 @@ import { getFirebaseMessaging } from '../config/firebase';
 import api from '../api/axios';
 import { useToast } from '../components/ui/Toast';
 import { useNavigate } from 'react-router-dom';
+import { playNotificationSound } from '../utils/notificationSound';
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BNutSNz9HosmoEOeGzgz2TibmCtwPBKpgJaq0ty57b0zL1PUHbKSX4bNOKlrvHW16Ej8n5TSdkjiOpVnDvj5eMk';
 
@@ -69,6 +70,9 @@ export const useNotifications = (userId?: number) => {
         const title = payload.notification?.title || 'Swara Aqua';
         const body  = payload.notification?.body  || '';
         const type  = (payload.data?.type as string) || 'general';
+
+        // Play notification sound
+        playNotificationSound();
 
         // Show in-app toast
         toast(`${title}: ${body}`, 'success');
