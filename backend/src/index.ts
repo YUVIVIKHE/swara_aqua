@@ -81,12 +81,14 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const start = async () => {
-  await runMigrations();
+  // Run migrations — non-fatal, log error but keep starting
+  try {
+    await runMigrations();
+  } catch (err) {
+    console.error('⚠️ Migration failed (check DB credentials):', (err as Error).message);
+  }
 
-  // Hostinger Passenger sets PORT automatically
-  // Fall back to 3000 (Passenger default) then 5000 for local dev
   const port = Number(process.env.PORT) || 3000;
-
   app.listen(port, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${port} [${process.env.NODE_ENV || 'development'}]`);
     startCronJobs();
