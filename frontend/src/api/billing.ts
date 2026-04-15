@@ -64,7 +64,10 @@ export const billingApi = {
   get: (id: number) =>
     api.get<{ bill: Bill }>(`/billing/${id}`),
 
-  pdfUrl: (id: number) => `/api/billing/${id}/pdf`,
+  pdfUrl: (id: number) => {
+    const token = localStorage.getItem('accessToken') || '';
+    return `/api/billing/${id}/pdf?token=${encodeURIComponent(token)}`;
+  },
 
   recordPayment: (id: number, amount: number) =>
     api.patch(`/billing/${id}/pay`, { amount }),

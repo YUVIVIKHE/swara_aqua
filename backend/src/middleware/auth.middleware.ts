@@ -12,15 +12,21 @@ interface JwtPayload {
 }
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  // Accept token from Authorization header OR ?token= query param (for PDF downloads)
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const queryToken = req.query.token as string | undefined;
+
+  const raw = authHeader?.startsWith('Bearer ')
+    ? authHeader.split(' ')[1]
+    : queryToken;
+
+  if (!raw) {
     res.status(401).json({ message: 'No token provided' });
     return;
   }
 
-  const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload;
+    const decoded = jwt.verify(raw, process.env.JWT_SECRET as string) as JwtPayload;
     req.user = { id: decoded.id, role: decoded.role };
     next();
   } catch {
