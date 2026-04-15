@@ -115,7 +115,7 @@ export const TopNavbar = ({ title }: { title: string }) => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden z-50"
+                className="fixed sm:absolute left-2 right-2 sm:left-auto sm:right-0 top-[4.5rem] sm:top-full sm:mt-2 sm:w-80 bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden z-50"
               >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                   <p className="text-sm font-bold text-slate-800">Notifications</p>
@@ -127,7 +127,7 @@ export const TopNavbar = ({ title }: { title: string }) => {
                   )}
                 </div>
 
-                <div className="max-h-80 overflow-y-auto">
+                <div className="max-h-[60vh] sm:max-h-80 overflow-y-auto">
                   {notifications.length === 0 ? (
                     <div className="py-8 text-center">
                       <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
