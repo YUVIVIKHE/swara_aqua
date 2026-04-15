@@ -30,29 +30,43 @@ cd ..
 # Hostinger stores domains at ~/domains/DOMAIN/public_html
 DOMAIN_DIR=$(find ~/domains -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)
 if [ -n "$DOMAIN_DIR" ]; then
-  PUBHTML="$DOMAIN_DIR/public_html"
+  # Hostinger Git deployment puts app in nodejs/ subfolder
+  APPDIR="$DOMAIN_DIR/nodejs"
 else
-  PUBHTML=~/public_html
+  APPDIR=~/nodejs
 fi
 
-echo "📁 Writing .htaccess → $PUBHTML/.htaccess"
-mkdir -p "$PUBHTML"
+echo "📁 Creating .env in $APPDIR/backend/"
+mkdir -p "$APPDIR/backend"
 
-# Get the home directory username
 USERNAME=$(whoami)
 
-cat > "$PUBHTML/.htaccess" << EOF
-PassengerEnabled on
-PassengerAppRoot /home/${USERNAME}/swara_aqua/backend
-PassengerStartupFile app.js
-PassengerAppType node
-PassengerNodejs /usr/bin/node
-
-Options -MultiViews -Indexes
-RewriteEngine On
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^ index.html [QSA,L]
+# Only create .env if it doesn't exist (don't overwrite secrets)
+if [ ! -f "$APPDIR/backend/.env" ]; then
+cat > "$APPDIR/backend/.env" << EOF
+NODE_ENV=production
+PORT=3000
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=${USERNAME}_swara_aqua
+DB_PASSWORD=Swara_aqua@123
+DB_NAME=${USERNAME}_swara_aqua
+DB_SSL=false
+JWT_SECRET=change_this_to_random_string_min_32_chars
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=change_this_to_another_random_string
+JWT_REFRESH_EXPIRES_IN=7d
+FRONTEND_URL=https://swaraaqua.labxco.in
+FIREBASE_PROJECT_ID=waterdelivery-a2126
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@waterdelivery-a2126.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="YOUR_FIREBASE_PRIVATE_KEY_HERE"
+RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxxxx
+RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx
 EOF
+  echo "✅ .env created — edit $APPDIR/backend/.env to add real secrets"
+else
+  echo "✅ .env already exists, skipping"
+fi
 
 echo ""
 echo "✅ Build complete!"
