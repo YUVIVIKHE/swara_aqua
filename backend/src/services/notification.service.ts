@@ -81,6 +81,24 @@ export const getUnreadCount = async (userId: number): Promise<number> => {
   return rows[0].count;
 };
 
+// ── FCM helpers ───────────────────────────────────────────────────────────────
+
+const siteUrl = () => process.env.FRONTEND_URL || 'https://swaraaqua.labxco.in';
+
+const iconUrl = () => `${siteUrl()}/icons/icon-192.png`;
+
+const screenLink = (type: string): string => {
+  const map: Record<string, string> = {
+    order:    '/customer/orders',
+    payment:  '/customer/wallet',
+    delivery: '/staff/deliveries',
+    approval: '/admin/users',
+    stock:    '/admin/inventory',
+    general:  '/',
+  };
+  return siteUrl() + (map[type] || '/');
+};
+
 // ── FCM send ──────────────────────────────────────────────────────────────────
 
 const buildMessage = (token: string, payload: SendPayload): admin.messaging.Message => ({
@@ -91,76 +109,52 @@ const buildMessage = (token: string, payload: SendPayload): admin.messaging.Mess
   },
   webpush: {
     notification: {
-      title: payload.title,
-      body:  payload.body,
-      icon:  '/icons/icon-192x192.png',
-      badge: '/icons/badge-72x72.png',
-      vibrate: [200, 100, 200],
+      title:              payload.title,
+      body:               payload.body,
+      icon:               iconUrl(),
+      badge:              iconUrl(),
       requireInteraction: true,
-      data: {
-        type:   payload.type,
-        ...(payload.data || {}),
-      },
+      data: { type: payload.type, ...(payload.data || {}) },
     },
-    fcmOptions: {
-      link: getScreenLink(payload.type, payload.data),
-    },
+    fcmOptions: { link: screenLink(payload.type) },
   },
   android: {
     priority: 'high',
     notification: {
-      sound:     'default',
-      channelId: 'swara_aqua_default',
-      priority:  'high',
+      title:        payload.title,
+      body:         payload.body,
+      sound:        'default',
+      channelId:    'swara_aqua_default',
+      priority:     'high',
       defaultSound: true,
     },
   },
   apns: {
     payload: {
       aps: {
-        sound: 'default',
-        badge: 1,
+        sound:            'default',
+        badge:            1,
         contentAvailable: true,
+        alert: { title: payload.title, body: payload.body },
       },
     },
   },
-  data: {
-    type:   payload.type,
-    ...(payload.data || {}),
-  },
+  data: { type: payload.type, ...(payload.data || {}) },
 });
-
-const getScreenLink = (type: string, data?: Record<string, string>): string => {
-  const base = process.env.FRONTEND_URL || 'http://localhost:5173';
-  const map: Record<string, string> = {
-    order:    '/customer/orders',
-    payment:  '/customer/payments',
-    delivery: '/staff/deliveries',
-    approval: '/admin/users',
-    stock:    '/admin',
-    general:  '/',
-  };
-  return base + (map[type] || '/');
-};
 
 /**
  * Send to a single user — fans out to all their registered tokens.
- * Automatically removes stale/invalid tokens.
  */
 export const sendToUser = async (payload: SendPayload): Promise<void> => {
   const tokens = await getTokensByUserId(payload.userId);
   if (!tokens.length) return;
 
-  // Save to notification history
   await saveNotification(payload);
 
   const results = await Promise.allSettled(
-    tokens.map(token =>
-      admin.messaging().send(buildMessage(token, payload))
-    )
+    tokens.map(token => admin.messaging().send(buildMessage(token, payload)))
   );
 
-  // Clean up invalid tokens
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     if (r.status === 'rejected') {
@@ -194,21 +188,22 @@ export const sendToRole = async (
     webpush: {
       notification: {
         title, body,
-        icon: '/icons/icon-192x192.png',
+        icon:               iconUrl(),
+        badge:              iconUrl(),
         requireInteraction: true,
+        data:               { type, ...(data || {}) },
       },
-      fcmOptions: { link: getScreenLink(type, data) },
+      fcmOptions: { link: screenLink(type) },
     },
     android: {
       priority: 'high',
-      notification: { sound: 'default', channelId: 'swara_aqua_default', priority: 'high' },
+      notification: { title, body, sound: 'default', channelId: 'swara_aqua_default', priority: 'high' },
     },
     data: { type, ...(data || {}) },
   };
 
   const response = await admin.messaging().sendEachForMulticast(message);
 
-  // Clean up invalid tokens
   response.responses.forEach(async (r, i) => {
     if (!r.success) {
       const code = (r.error as any)?.errorInfo?.code;
