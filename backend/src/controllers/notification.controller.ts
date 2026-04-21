@@ -39,11 +39,11 @@ export const sendNotification = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    await NotifService.sendToUser({ userId, title, body, type: type || 'general', data });
+    await NotifService.sendToUser({ userId: Number(userId), title, body, type: type || 'general', data });
     res.json({ message: 'Notification sent' });
   } catch (err) {
-    console.error('sendNotification error:', err);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('sendNotification error:', (err as Error).message);
+    res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
   }
 };
 
@@ -59,8 +59,8 @@ export const broadcastNotification = async (req: AuthRequest, res: Response): Pr
     await NotifService.sendToRole(role, title, body, type || 'general', data);
     res.json({ message: `Broadcast sent to role: ${role}` });
   } catch (err) {
-    console.error('broadcastNotification error:', err);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('broadcastNotification error:', (err as Error).message);
+    res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
   }
 };
 

@@ -147,25 +147,33 @@ const buildMessage = (token: string, payload: SendPayload): admin.messaging.Mess
  */
 export const sendToUser = async (payload: SendPayload): Promise<void> => {
   const tokens = await getTokensByUserId(payload.userId);
-  if (!tokens.length) return;
 
+  // Always save to notification history regardless of FCM
   await saveNotification(payload);
 
-  const results = await Promise.allSettled(
-    tokens.map(token => admin.messaging().send(buildMessage(token, payload)))
-  );
+  if (!tokens.length) return;
 
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    if (r.status === 'rejected') {
-      const code = (r.reason as any)?.errorInfo?.code;
-      if (
-        code === 'messaging/registration-token-not-registered' ||
-        code === 'messaging/invalid-registration-token'
-      ) {
-        await removeToken(tokens[i]);
+  // FCM is best-effort — don't throw if Firebase not configured
+  try {
+    const results = await Promise.allSettled(
+      tokens.map(token => admin.messaging().send(buildMessage(token, payload)))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'rejected') {
+        const code = (r.reason as any)?.errorInfo?.code;
+        console.warn(`FCM send failed for token ${i}:`, code || (r.reason as Error).message);
+        if (
+          code === 'messaging/registration-token-not-registered' ||
+          code === 'messaging/invalid-registration-token'
+        ) {
+          await removeToken(tokens[i]);
+        }
       }
     }
+  } catch (err) {
+    console.warn('FCM sendToUser failed (non-fatal):', (err as Error).message);
   }
 };
 
@@ -180,39 +188,55 @@ export const sendToRole = async (
   data?: Record<string, string>
 ): Promise<void> => {
   const tokens = await getTokensByRole(role);
+
+  // Save notifications to DB for all users with this role (best effort)
+  try {
+    const [users] = await pool.query<RowDataPacket[]>(
+      "SELECT id FROM users WHERE role = ? AND status = 'active'", [role]
+    );
+    for (const u of users as RowDataPacket[]) {
+      await saveNotification({ userId: u.id, title, body, type, data }).catch(() => {});
+    }
+  } catch {}
+
   if (!tokens.length) return;
 
-  const message: admin.messaging.MulticastMessage = {
-    tokens,
-    notification: { title, body },
-    webpush: {
-      notification: {
-        title, body,
-        icon:               iconUrl(),
-        badge:              iconUrl(),
-        requireInteraction: true,
-        data:               { type, ...(data || {}) },
+  // FCM best-effort
+  try {
+    const message: admin.messaging.MulticastMessage = {
+      tokens,
+      notification: { title, body },
+      webpush: {
+        notification: {
+          title, body,
+          icon:               iconUrl(),
+          badge:              iconUrl(),
+          requireInteraction: true,
+          data:               { type, ...(data || {}) },
+        },
+        fcmOptions: { link: screenLink(type) },
       },
-      fcmOptions: { link: screenLink(type) },
-    },
-    android: {
-      priority: 'high',
-      notification: { title, body, sound: 'default', channelId: 'swara_aqua_default', priority: 'high' },
-    },
-    data: { type, ...(data || {}) },
-  };
+      android: {
+        priority: 'high',
+        notification: { title, body, sound: 'default', channelId: 'swara_aqua_default', priority: 'high' },
+      },
+      data: { type, ...(data || {}) },
+    };
 
-  const response = await admin.messaging().sendEachForMulticast(message);
+    const response = await admin.messaging().sendEachForMulticast(message);
 
-  response.responses.forEach(async (r, i) => {
-    if (!r.success) {
-      const code = (r.error as any)?.errorInfo?.code;
-      if (
-        code === 'messaging/registration-token-not-registered' ||
-        code === 'messaging/invalid-registration-token'
-      ) {
-        await removeToken(tokens[i]);
+    response.responses.forEach(async (r, i) => {
+      if (!r.success) {
+        const code = (r.error as any)?.errorInfo?.code;
+        if (
+          code === 'messaging/registration-token-not-registered' ||
+          code === 'messaging/invalid-registration-token'
+        ) {
+          await removeToken(tokens[i]);
+        }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.warn('FCM sendToRole failed (non-fatal):', (err as Error).message);
+  }
 };
