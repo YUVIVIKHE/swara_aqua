@@ -16,25 +16,25 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log('[SW] Background message:', payload);
 
-  const title   = payload.notification?.title || payload.data?.title || 'Swara Aqua';
+  const title   = payload.notification?.title || payload.data?.title || 'New Notification';
   const body    = payload.notification?.body  || payload.data?.body  || '';
   const type    = payload.data?.type || 'general';
   const orderId = payload.data?.orderId || '';
 
-  self.registration.showNotification(title, {
+  self.registration.showNotification(`Swara Aqua — ${title}`, {
     body,
     icon:               '/icons/icon-192.png',
     badge:              '/icons/icon-192.png',
     image:              '/icons/icon-512.png',
-    vibrate:            [200, 100, 200, 100, 200],
-    requireInteraction: false,
+    vibrate:            [300, 100, 300, 100, 500],
+    requireInteraction: true,
     tag:                `swara-${type}-${orderId || Date.now()}`,
     renotify:           true,
     silent:             false,
     data:               { type, orderId, url: self.location.origin },
     actions: [
       { action: 'open',    title: '📱 Open App' },
-      { action: 'dismiss', title: 'Dismiss'     },
+      { action: 'dismiss', title: '✕ Dismiss'   },
     ],
   });
 });

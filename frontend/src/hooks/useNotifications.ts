@@ -65,32 +65,31 @@ export const useNotifications = (userId?: number) => {
 
       // 6. Foreground message handler
       onMessage(messaging, (payload) => {
-        console.log('[FCM] Foreground message:', payload);
-
-        const title = payload.notification?.title || 'Swara Aqua';
-        const body  = payload.notification?.body  || '';
+        const title = payload.notification?.title || payload.data?.title || 'Swara Aqua';
+        const body  = payload.notification?.body  || payload.data?.body  || '';
         const type  = (payload.data?.type as string) || 'general';
 
-        // Play notification sound
+        // Play loud notification sound
         playNotificationSound();
 
-        // Show in-app toast
-        toast(`${title}: ${body}`, 'success');
-
-        // Also show a browser notification even in foreground
+        // Show browser notification with app logo + name + message
         if (Notification.permission === 'granted') {
-          const n = new Notification(title, {
+          const n = new Notification(`Swara Aqua — ${title}`, {
             body,
-            icon:  '/icons/icon-192x192.png',
-            badge: '/icons/badge-72x72.png',
+            icon:  '/icons/icon-192.png',
+            badge: '/icons/icon-192.png',
+            tag:   `swara-${type}-${Date.now()}`,
+            silent: false,
           });
-
           n.onclick = () => {
             window.focus();
             navigate(SCREEN_MAP[type] || '/');
             n.close();
           };
         }
+
+        // Also show in-app toast
+        toast(`${title}: ${body}`, 'success');
       });
 
     } catch (err) {
