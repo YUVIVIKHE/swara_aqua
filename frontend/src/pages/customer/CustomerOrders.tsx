@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Package, X, ChevronRight, MapPin, FileText, Droplets, RefreshCw, Navigation, Home, Briefcase, Check, Wallet, CreditCard, Banknote } from 'lucide-react';
+import { Plus, Package, X, ChevronRight, MapPin, FileText, Droplets, RefreshCw, Navigation, Home, Briefcase, Check, Wallet, CreditCard, Banknote, Map } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { OrderStatusBadge } from '../../components/ui/OrderStatusBadge';
@@ -13,6 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import { addressApi, UserAddress } from '../../api/address';
 import { walletApi } from '../../api/wallet';
 import { loadRazorpay } from '../../utils/razorpay';
+import { MapPicker } from '../../components/ui/MapPicker';
 
 
 
@@ -557,6 +558,7 @@ const LABEL_ICONS: Record<string, React.ReactNode> = {
 const AddressPicker = ({ address, onSelect }: { address: string; onSelect: (addr: string) => void }) => {
   const [addresses, setAddresses] = useState<UserAddress[]>([]);
   const [showNew, setShowNew]     = useState(false);
+  const [showMap, setShowMap]     = useState(false);
   const [newAddr, setNewAddr]     = useState('');
   const [newLabel, setNewLabel]   = useState('Home');
   const [locating, setLocating]   = useState(false);
@@ -609,6 +611,18 @@ const AddressPicker = ({ address, onSelect }: { address: string; onSelect: (addr
   return (
     <div>
       <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Delivery Address</label>
+
+      {/* Map picker modal */}
+      {showMap && (
+        <MapPicker
+          onConfirm={(addr, lat, lng) => {
+            setNewAddr(addr);
+            onSelect(addr);
+            setShowMap(false);
+          }}
+          onClose={() => setShowMap(false)}
+        />
+      )}
 
       {/* Saved addresses */}
       {addresses.length > 0 && (
@@ -664,11 +678,18 @@ const AddressPicker = ({ address, onSelect }: { address: string; onSelect: (addr
             className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10 transition-all resize-none"
           />
           <div className="flex items-center justify-between">
-            <button type="button" onClick={handleLocate}
-              className="flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors">
-              <Navigation className="w-3 h-3" />
-              {locating ? 'Locating...' : 'Use current location'}
-            </button>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={handleLocate}
+                className="flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors">
+                <Navigation className="w-3 h-3" />
+                {locating ? 'Locating...' : 'Use GPS'}
+              </button>
+              <button type="button" onClick={() => setShowMap(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-brand-600 transition-colors">
+                <Map className="w-3 h-3" />
+                Pick on Map
+              </button>
+            </div>
             <div className="flex gap-2">
               {addresses.length > 0 && (
                 <button type="button" onClick={() => setShowNew(false)}
