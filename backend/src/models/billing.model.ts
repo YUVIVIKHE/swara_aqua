@@ -86,7 +86,11 @@ export const generateBillForCustomer = async (
     }
 
     const status: Bill['status'] = totalAmount <= 0 ? 'paid' : 'unpaid';
-    const dueDate = `${month}-10`; // 10th of next month
+
+    // Due date = 10th of the NEXT month
+    const [y, m] = month.split('-').map(Number);
+    const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    const dueDate = `${nextMonth}-10`;
 
     const [result] = await conn.query<ResultSetHeader>(
       `INSERT INTO bills

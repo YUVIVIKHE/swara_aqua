@@ -3,6 +3,8 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import * as BillingModel from '../models/billing.model';
 import * as NotifService from '../services/notification.service';
 import { generateBillPDF } from '../services/pdf.service';
+import pool from '../config/db';
+import { RowDataPacket } from 'mysql2/promise';
 import { z } from 'zod';
 
 const notify = (fn: () => Promise<void>) =>
@@ -113,6 +115,76 @@ export const recordPayment = async (req: AuthRequest, res: Response): Promise<vo
       res.status(400).json({ message: err.issues[0].message }); return;
     }
     console.error('recordPayment error:', err);
+    res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
+  }
+};
+
+// PATCH /api/billing/:id/pay-wallet  (customer — pay own bill via wallet)
+export const payBillWithWallet = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const bill = await BillingModel.getBillById(Number(req.params.id));
+    if (!bill) { res.status(404).json({ message: 'Bill not found' }); return; }
+
+    // Customers can only pay their own bills
+    if (req.user!.role === 'customer' && bill.customer_id !== req.user!.id) {
+      res.status(403).json({ message: 'Access denied' }); return;
+    }
+    if (bill.status === 'paid') {
+      res.status(400).json({ message: 'Bill already paid' }); return;
+    }
+
+    const due = parseFloat((Number(bill.total_amount) - Number(bill.paid_amount)).toFixed(2));
+    if (due <= 0) { res.status(400).json({ message: 'No amount due' }); return; }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Check wallet balance
+      const [userRows] = await conn.query<RowDataPacket[]>(
+        'SELECT wallet_balance FROM users WHERE id = ? FOR UPDATE',
+        [bill.customer_id]
+      );
+      const walletBalance = Number(userRows[0]?.wallet_balance ?? 0);
+      if (walletBalance < due) {
+        await conn.rollback();
+        res.status(400).json({ message: `Insufficient wallet balance. Need ₹${due}, have ₹${walletBalance}` });
+        return;
+      }
+
+      // Debit wallet
+      await conn.query('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?', [due, bill.customer_id]);
+
+      // Record wallet transaction
+      await conn.query(
+        `INSERT INTO wallet_transactions (user_id, type, amount, mode, status, reference_id, note)
+         VALUES (?, 'debit', ?, 'wallet', 'completed', ?, ?)`,
+        [bill.customer_id, due, `bill-${bill.id}`, `Bill payment for ${bill.month}`]
+      );
+
+      await conn.commit();
+    } catch (e) {
+      await conn.rollback();
+      throw e;
+    } finally {
+      conn.release();
+    }
+
+    // Record payment on bill
+    await BillingModel.recordBillPayment(bill.id, due);
+
+    notify(() =>
+      NotifService.sendToUser({
+        userId: bill.customer_id,
+        title:  '✅ Bill Paid',
+        body:   `Your ${bill.month} bill of ₹${due} has been paid via wallet.`,
+        type:   'payment',
+      })
+    );
+
+    res.json({ message: 'Bill paid via wallet' });
+  } catch (err) {
+    console.error('payBillWithWallet error:', err);
     res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
   }
 };

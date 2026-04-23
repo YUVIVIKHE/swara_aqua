@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate, allowAdmin } from '../middleware/auth.middleware';
 import {
-  generateBills, getBills, getBillById, downloadBillPDF, recordPayment,
+  generateBills, getBills, getBillById, downloadBillPDF, recordPayment, payBillWithWallet,
 } from '../controllers/billing.controller';
 import {
   getRevenue, getPendingPayments, getStaffPerformance,
@@ -17,8 +17,9 @@ router.get('/reports/staff-performance', ...allowAdmin, getStaffPerformance);
 
 // ── Billing list + detail ─────────────────────────────────────────────────────
 router.get('/',              authenticate, getBills);
-router.get('/:id/pdf',       authenticate, downloadBillPDF);  // /pdf before /:id
+router.get('/:id/pdf',       authenticate, downloadBillPDF);
 router.get('/:id',           authenticate, getBillById);
 router.patch('/:id/pay',    ...allowAdmin, recordPayment);
+router.patch('/:id/pay-wallet', authenticate, payBillWithWallet);
 
 export default router;

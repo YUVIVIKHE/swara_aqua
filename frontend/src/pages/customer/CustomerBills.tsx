@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText, Download, ChevronDown, IndianRupee,
-  CheckCircle2, AlertCircle, Clock, Wallet,
+  CheckCircle2, AlertCircle, Clock, Wallet, CreditCard,
 } from 'lucide-react';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { billingApi, Bill } from '../../api/billing';
+import { walletApi } from '../../api/wallet';
+import { loadRazorpay } from '../../utils/razorpay';
 
 const STATUS_CFG: Record<string, { label: string; icon: typeof CheckCircle2; bg: string; text: string; dot: string }> = {
   paid:    { label: 'Paid',    icon: CheckCircle2, bg: 'bg-green-50 border-green-100', text: 'text-green-700', dot: 'bg-green-400' },
@@ -23,16 +25,84 @@ const formatMonth = (monthStr: string) => {
 
 export const CustomerBills = () => {
   const { toast } = useToast();
-  const [bills,   setBills]   = useState<Bill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [bills,        setBills]        = useState<Bill[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [expanded,     setExpanded]     = useState<number | null>(null);
+  const [walletBal,    setWalletBal]    = useState(0);
+  const [payingBillId, setPayingBillId] = useState<number | null>(null);
 
-  useEffect(() => {
-    billingApi.list()
-      .then(({ data }) => setBills(data.bills))
-      .catch(() => toast('Failed to load bills', 'error'))
-      .finally(() => setLoading(false));
-  }, []);
+  const load = async () => {
+    try {
+      const [billsRes, walletRes] = await Promise.all([
+        billingApi.list(),
+        walletApi.get(),
+      ]);
+      setBills(billsRes.data.bills);
+      setWalletBal(walletRes.data.balance);
+    } catch { toast('Failed to load bills', 'error'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handlePayWithWallet = async (bill: Bill) => {
+    const due = Number(bill.total_amount) - Number(bill.paid_amount);
+    if (walletBal < due) {
+      toast(`Insufficient wallet balance. Need ₹${due.toFixed(2)}, have ₹${walletBal.toFixed(2)}`, 'error');
+      return;
+    }
+    setPayingBillId(bill.id);
+    try {
+      await walletApi.payBill(bill.id);
+      toast('Bill paid via wallet!', 'success');
+      await load();
+    } catch (err: any) {
+      toast(err?.response?.data?.message || 'Payment failed', 'error');
+    } finally { setPayingBillId(null); }
+  };
+
+  const handlePayWithRazorpay = async (bill: Bill) => {
+    const due = Number(bill.total_amount) - Number(bill.paid_amount);
+    setPayingBillId(bill.id);
+    try {
+      const rzpLoaded = await loadRazorpay();
+      if (!rzpLoaded) { toast('Razorpay failed to load', 'error'); return; }
+
+      const { data } = await walletApi.createTopupOrder(due);
+
+      await new Promise<void>((resolve, reject) => {
+        const options = {
+          key:         data.keyId,
+          amount:      data.amount,
+          currency:    data.currency,
+          name:        'Swara Aqua',
+          description: `Bill Payment — ${bill.month}`,
+          order_id:    data.orderId,
+          handler: async (response: any) => {
+            try {
+              await walletApi.verifyTopup({
+                razorpay_order_id:   response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature:  response.razorpay_signature,
+                amount:              data.amount,
+              });
+              // Credit wallet then pay bill
+              await walletApi.payBill(bill.id);
+              toast('Bill paid via Razorpay!', 'success');
+              await load();
+              resolve();
+            } catch { reject(new Error('Verification failed')); }
+          },
+          modal: { ondismiss: () => reject(new Error('dismissed')) },
+          theme: { color: '#0ea5e9' },
+        };
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+      });
+    } catch (err: any) {
+      if (err?.message !== 'dismissed') toast(err?.message || 'Payment failed', 'error');
+    } finally { setPayingBillId(null); }
+  };
 
   const totalPending = bills.reduce((s, b) =>
     s + Math.max(0, Number(b.total_amount) - Number(b.paid_amount)), 0
@@ -202,6 +272,26 @@ export const CustomerBills = () => {
                           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-800 text-white text-xs font-bold hover:opacity-90 active:scale-[0.98] transition-all">
                           <Download className="w-4 h-4" /> Download PDF
                         </button>
+
+                        {/* Pay buttons — only for unpaid/partial */}
+                        {b.status !== 'paid' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              disabled={payingBillId === b.id}
+                              onClick={e => { e.stopPropagation(); handlePayWithWallet(b); }}
+                              className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 disabled:opacity-50 transition-all">
+                              <Wallet className="w-3.5 h-3.5" />
+                              {payingBillId === b.id ? 'Processing…' : `Wallet (₹${walletBal.toFixed(0)})`}
+                            </button>
+                            <button
+                              disabled={payingBillId === b.id}
+                              onClick={e => { e.stopPropagation(); handlePayWithRazorpay(b); }}
+                              className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-700 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50 transition-all">
+                              <CreditCard className="w-3.5 h-3.5" />
+                              Pay Online
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}

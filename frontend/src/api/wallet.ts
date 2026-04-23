@@ -30,4 +30,7 @@ export const walletApi = {
 
   payOrder: (orderId: number) =>
     api.post<{ balance: number }>('/wallet/pay-order', { orderId }),
+
+  payBill: (billId: number) =>
+    api.patch<{ message: string }>(`/billing/${billId}/pay-wallet`),
 };
