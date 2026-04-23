@@ -22,7 +22,7 @@ messaging.onBackgroundMessage((payload) => {
   const orderId = payload.data?.orderId || '';
 
   self.registration.showNotification(`Swara Aqua — ${title}`, {
-    body,
+    body:               body || 'Tap to open the app',
     icon:               '/icons/icon-192.png',
     badge:              '/icons/icon-192.png',
     image:              '/icons/icon-512.png',
