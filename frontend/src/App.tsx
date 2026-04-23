@@ -3,7 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import ProtectedRoute from './components/ProtectedRoute';
-import { PWAInstallBanner, OfflineIndicator } from './components/PWAInstall';
+import { OfflineIndicator } from './components/PWAInstall';
 
 // Lazy load heavy dashboards — only downloaded when user navigates there
 const LoginPage       = lazy(() => import('./pages/LoginPage'));
@@ -44,7 +44,6 @@ const App = () => (
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>
-      <PWAInstallBanner />
     </ToastProvider>
   </AuthProvider>
 );
