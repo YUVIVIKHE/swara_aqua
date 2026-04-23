@@ -135,7 +135,7 @@ export const MapPicker = ({ onConfirm, onClose, initialLat, initialLng }: MapPic
           <MapPin className="w-5 h-5 text-brand-500" />
           <p className="text-sm font-bold text-slate-800">Select Delivery Location</p>
         </div>
-        <button onClick={onClose}
+        <button onClick={onClose} type="button"
           className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors">
           <X className="w-4 h-4 text-slate-500" />
         </button>
@@ -152,6 +152,7 @@ export const MapPicker = ({ onConfirm, onClose, initialLat, initialLng }: MapPic
 
         {/* Locate me button */}
         <button
+          type="button"
           onClick={handleLocate}
           className="absolute top-3 right-3 z-[1000] flex items-center gap-2 bg-white border border-slate-200 shadow-md rounded-xl px-3 py-2 text-xs font-semibold text-brand-600 hover:bg-brand-50 transition-colors"
         >
@@ -181,6 +182,7 @@ export const MapPicker = ({ onConfirm, onClose, initialLat, initialLng }: MapPic
         </div>
 
         <button
+          type="button"
           onClick={() => onConfirm(address, lat, lng)}
           disabled={loading}
           className="w-full flex items-center justify-center gap-2 py-3.5 bg-brand-600 text-white font-semibold text-sm rounded-2xl hover:bg-brand-700 disabled:opacity-50 active:scale-[0.98] transition-all"

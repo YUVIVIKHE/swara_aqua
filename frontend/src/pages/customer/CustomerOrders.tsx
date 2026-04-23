@@ -685,8 +685,7 @@ const AddressPicker = ({ address, onSelect }: { address: string; onSelect: (addr
                 {locating ? 'Locating...' : 'Use GPS'}
               </button>
               <button type="button" onClick={() => setShowMap(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-brand-600 transition-colors">
-                <Map className="w-3 h-3" />
+                className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-brand-600 transition-colors">                <Map className="w-3 h-3" />
                 Pick on Map
               </button>
             </div>
