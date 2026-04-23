@@ -61,7 +61,6 @@ app.use('/api/wallet',        walletRoutes);
 // Use __dirname so paths work regardless of where Passenger sets cwd
 const appRoot = path.join(__dirname, '..');
 app.use('/uploads', express.static(path.join(appRoot, 'uploads')));
-
 // ── Serve React SPA in production ─────────────────────────────────────────────
 if (isProd) {
   const distPath = path.join(appRoot, 'public');

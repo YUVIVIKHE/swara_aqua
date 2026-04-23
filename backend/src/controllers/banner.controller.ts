@@ -6,7 +6,8 @@ import pool from '../config/db';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 // ── Multer storage ─────────────────────────────────────────────────────────
-const uploadDir = path.join(process.cwd(), 'uploads', 'banners');
+// Use __dirname-based path so it works regardless of where Node is started from
+const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'banners');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
