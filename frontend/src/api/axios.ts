@@ -2,9 +2,22 @@ import axios from 'axios';
 
 // In production the frontend is served by the same Express server,
 // so relative /api works. In dev, Vite proxies /api → localhost:5000.
-const BASE_URL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : '/api';
+const BACKEND_ORIGIN = import.meta.env.VITE_API_URL || '';
+
+const BASE_URL = BACKEND_ORIGIN ? `${BACKEND_ORIGIN}/api` : '/api';
+
+/**
+ * Resolves a relative backend path like /uploads/banners/xx.jpg
+ * to a full URL when the backend is on a different origin.
+ */
+export const getUploadUrl = (path: string): string => {
+  if (!path) return '';
+  // Already an absolute URL — leave as-is
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // Relative path — prefix with backend origin if configured
+  return BACKEND_ORIGIN ? `${BACKEND_ORIGIN}${path}` : path;
+};
+
 
 const api = axios.create({
   baseURL: BASE_URL,

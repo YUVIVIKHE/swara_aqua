@@ -4,7 +4,7 @@ import {
   ImageIcon, Upload, Trash2, Eye, EyeOff, Plus, X,
   GripVertical, Link, Type, CheckCircle, AlertCircle,
 } from 'lucide-react';
-import api from '../../api/axios';
+import api, { getUploadUrl } from '../../api/axios';
 import { useToast } from '../../components/ui/Toast';
 
 interface Banner {
@@ -216,7 +216,7 @@ export const AdminBanners = () => {
               {/* Image */}
               <div className="relative">
                 <img
-                  src={b.image_url} alt={b.title || 'Banner'}
+                  src={getUploadUrl(b.image_url)} alt={b.title || 'Banner'}
                   className={`w-full h-40 object-cover transition-opacity ${b.is_active ? 'opacity-100' : 'opacity-40'}`}
                   onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x300/e2e8f0/94a3b8?text=Image+not+found'; }}
                 />

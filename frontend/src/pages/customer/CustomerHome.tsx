@@ -5,7 +5,7 @@ import {
   TrendingUp, CheckCircle2, Timer,
 } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import api from '../../api/axios';
+import api, { getUploadUrl } from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useOrders } from '../../hooks/useOrders';
@@ -68,12 +68,12 @@ const BannerCarousel = () => {
           exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }}>
           {b.link_url ? (
             <a href={b.link_url} target="_blank" rel="noopener noreferrer">
-              <img src={b.image_url} alt={b.title || 'Banner'}
+              <img src={getUploadUrl(b.image_url)} alt={b.title || 'Banner'}
                 className="w-full h-40 sm:h-48 object-cover"
                 onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x300/e2e8f0/94a3b8?text=Banner'; }} />
             </a>
           ) : (
-            <img src={b.image_url} alt={b.title || 'Banner'}
+            <img src={getUploadUrl(b.image_url)} alt={b.title || 'Banner'}
               className="w-full h-40 sm:h-48 object-cover"
               onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x300/e2e8f0/94a3b8?text=Banner'; }} />
           )}
