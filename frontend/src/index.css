@@ -94,8 +94,12 @@
   background: linear-gradient(135deg, #1e6aeb 0%, #1248b8 100%);
   border-bottom-left-radius: 20px;
   border-bottom-right-radius: 20px;
-  padding-top: env(safe-area-inset-top);
+  /* Extend background behind the status bar on all platforms */
+  padding-top: calc(env(safe-area-inset-top) + 4px);
   padding-bottom: 8px;
+  /* Pull up to cover the status bar gap */
+  margin-top: calc(-1 * env(safe-area-inset-top));
+  position: relative;
 }
 
 /* ── Order Promo Card ─────────────────────────────────────────────── */
