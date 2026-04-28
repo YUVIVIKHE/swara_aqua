@@ -8,6 +8,9 @@ import dotenv from 'dotenv';
 // This is critical for Hostinger Passenger which changes cwd
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
+// Ensure IST timezone
+process.env.TZ = 'Asia/Kolkata';
+
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
 import notificationRoutes from './routes/notification.routes';
@@ -18,6 +21,8 @@ import addressRoutes from './routes/address.routes';
 import bannerRoutes from './routes/banner.routes';
 import eventsRoutes from './routes/events.routes';
 import walletRoutes from './routes/wallet.routes';
+import subscriptionRoutes from './routes/subscription.routes';
+import casualDeliveryRoutes from './routes/casualDelivery.routes';
 import { startCronJobs } from './services/cron.service';
 import { startKeepAlive } from './services/keepalive.service';
 import { runMigrations } from './config/migrate';
@@ -55,7 +60,9 @@ app.use('/api/billing',       billingRoutes);
 app.use('/api/addresses',     addressRoutes);
 app.use('/api/banners',       bannerRoutes);
 app.use('/api/events',        eventsRoutes);
-app.use('/api/wallet',        walletRoutes);
+app.use('/api/wallet',             walletRoutes);
+app.use('/api/subscriptions',      subscriptionRoutes);
+app.use('/api/casual-deliveries',  casualDeliveryRoutes);
 
 // ── Static files ──────────────────────────────────────────────────────────────
 // Use __dirname so paths work regardless of where Passenger sets cwd

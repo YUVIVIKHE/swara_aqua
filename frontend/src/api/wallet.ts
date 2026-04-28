@@ -1,5 +1,7 @@
 import api from './axios';
 
+export type WalletAccess = 'none' | 'pending' | 'approved' | 'rejected';
+
 export interface WalletTransaction {
   id: number;
   user_id: number;
@@ -12,9 +14,21 @@ export interface WalletTransaction {
   created_at: string;
 }
 
+export interface WalletAccessRequest {
+  id: number;
+  name: string;
+  phone: string;
+  wallet_access: WalletAccess;
+  wallet_balance: number;
+  created_at: string;
+}
+
 export const walletApi = {
   get: () =>
-    api.get<{ balance: number; transactions: WalletTransaction[] }>('/wallet'),
+    api.get<{ balance: number; walletAccess: WalletAccess; transactions: WalletTransaction[] }>('/wallet'),
+
+  requestAccess: () =>
+    api.post<{ message: string; walletAccess: WalletAccess }>('/wallet/request-access'),
 
   createTopupOrder: (amount: number) =>
     api.post<{ orderId: string; amount: number; currency: string; keyId: string }>(
@@ -33,4 +47,14 @@ export const walletApi = {
 
   payBill: (billId: number) =>
     api.patch<{ message: string }>(`/billing/${billId}/pay-wallet`),
+
+  // Admin
+  getAccessRequests: (status: WalletAccess = 'pending') =>
+    api.get<{ requests: WalletAccessRequest[] }>('/wallet/access-requests', { params: { status } }),
+
+  approveAccess: (userId: number) =>
+    api.patch<{ message: string }>(`/wallet/access-requests/${userId}/approve`),
+
+  rejectAccess: (userId: number, reason?: string) =>
+    api.patch<{ message: string }>(`/wallet/access-requests/${userId}/reject`, { reason }),
 };

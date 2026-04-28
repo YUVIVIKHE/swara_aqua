@@ -54,6 +54,12 @@ export interface StaffPerf {
   cash_collected: number;
 }
 
+export interface CustomerGrowthPoint {
+  date?: string;
+  month?: string;
+  new_customers: number;
+}
+
 export const billingApi = {
   generate: (month: string) =>
     api.post('/billing/generate', { month }),
@@ -85,4 +91,31 @@ export const billingApi = {
     api.get<{ data: StaffPerf[] }>('/billing/reports/staff-performance', {
       params: month ? { month } : undefined,
     }),
+
+  customerGrowth: (params?: Record<string, string>) =>
+    api.get<{ data: CustomerGrowthPoint[]; period: string }>(
+      '/billing/reports/customer-growth', { params }
+    ),
+
+  // Delivery report (flexible date range)
+  deliveryReport: (params: { customerId?: number; startDate: string; endDate: string }) =>
+    api.get<{ report: DeliveryReport }>('/billing/delivery-report', { params }),
+
+  deliveryReportPdfUrl: (params: { customerId?: number; startDate: string; endDate: string }) => {
+    const token = localStorage.getItem('accessToken') || '';
+    const qs = new URLSearchParams({ startDate: params.startDate, endDate: params.endDate, token });
+    if (params.customerId) qs.set('customerId', String(params.customerId));
+    return `/api/billing/delivery-report/pdf?${qs.toString()}`;
+  },
 };
+
+export interface DeliveryReport {
+  customer: { id: number; name: string; phone: string; jar_rate: number; address?: string };
+  startDate: string;
+  endDate: string;
+  totalJars: number;
+  jarRate: number;
+  totalAmount: number;
+  days: { date: string; jars: number }[];
+}
+

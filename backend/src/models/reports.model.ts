@@ -95,3 +95,36 @@ export const getRevenueSummary = async (): Promise<RowDataPacket> => {
   `);
   return rows[0];
 };
+
+// ── Customer growth ───────────────────────────────────────────────────────────
+
+export const getDailyCustomerGrowth = async (days = 30): Promise<RowDataPacket[]> => {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       DATE(created_at) AS date,
+       COUNT(*)         AS new_customers
+     FROM users
+     WHERE role = 'customer'
+       AND created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+     GROUP BY DATE(created_at)
+     ORDER BY date ASC`,
+    [days]
+  );
+  return rows;
+};
+
+export const getMonthlyCustomerGrowth = async (months = 12): Promise<RowDataPacket[]> => {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       DATE_FORMAT(created_at, '%Y-%m') AS month,
+       COUNT(*)                          AS new_customers
+     FROM users
+     WHERE role = 'customer'
+       AND created_at >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
+     GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+     ORDER BY month ASC`,
+    [months]
+  );
+  return rows;
+};
+

@@ -22,7 +22,7 @@ export const DashboardLayout = ({ children, navItems, title, onOrderPress }: Pro
       <Sidebar items={navItems} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
 
       <div className="flex flex-col flex-1 min-w-0">
-        <TopNavbar title={title} />
+        <TopNavbar title={title} onOrderPress={onOrderPress} />
         <motion.main
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}

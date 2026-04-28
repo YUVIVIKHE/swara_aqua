@@ -18,7 +18,7 @@ const notify = (fn: () => Promise<void>) => {
 
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { type, quantity, pricePerJar, deliveryDate, notes, address, latitude, longitude } = req.body;
+    let { type, quantity, pricePerJar, deliveryDate, notes, address, latitude, longitude } = req.body;
 
     if (!type || !quantity) {
       res.status(400).json({ message: 'type and quantity are required' });
@@ -31,6 +31,30 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
     if (type === 'preorder' && !deliveryDate) {
       res.status(400).json({ message: 'deliveryDate is required for preorder' });
       return;
+    }
+
+    // ── Time slot enforcement ─────────────────────────────────────────────────
+    let scheduledForTomorrow = false;
+    if (type === 'instant') {
+      const SubModel = await import('../models/subscription.model');
+      const startStr = await SubModel.getSetting('booking_start_time') || '08:00';
+      const endStr = await SubModel.getSetting('booking_end_time') || '18:00';
+      const now = new Date();
+      const [sH, sM] = startStr.split(':').map(Number);
+      const [eH, eM] = endStr.split(':').map(Number);
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const startMinutes = sH * 60 + sM;
+      const endMinutes = eH * 60 + eM;
+
+      if (currentMinutes < startMinutes || currentMinutes >= endMinutes) {
+        // Convert to preorder for tomorrow at booking start time
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+        deliveryDate = `${tomorrowStr}T${startStr}:00`;
+        type = 'preorder';
+        scheduledForTomorrow = true;
+      }
     }
 
     // Use customer's personalized jar rate from DB
@@ -121,7 +145,10 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
     // SSE: notify admin + all staff of new order
     SSE.broadcastToRoles(['admin', 'staff'], 'order_created', { orderId, quantity, customerId: req.user!.id });
 
-    res.status(201).json({ message: 'Order placed successfully', orderId });
+    const msg = scheduledForTomorrow
+      ? 'Order scheduled for tomorrow (outside booking hours)'
+      : 'Order placed successfully';
+    res.status(201).json({ message: msg, orderId, scheduledForTomorrow });
   } catch (err) {
     console.error('createOrder error:', err);
     res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
@@ -180,14 +207,50 @@ export const cancelOrder = async (req: AuthRequest, res: Response): Promise<void
     if (order.customer_id !== req.user!.id && req.user!.role !== 'admin') {
       res.status(403).json({ message: 'Access denied' }); return;
     }
-    if (!['pending'].includes(order.status)) {
-      res.status(400).json({ message: 'Only pending orders can be cancelled' }); return;
+    if (['completed', 'cancelled'].includes(order.status)) {
+      res.status(400).json({ message: `Cannot cancel a ${order.status} order` }); return;
     }
-    await OrderModel.cancelOrder(order.id, req.user!.id);
-    res.json({ message: 'Order cancelled' });
-  } catch (err) {
-    console.error('cancelOrder error:', err);
-    res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
+
+    // Admin can always cancel directly
+    if (req.user!.role === 'admin') {
+      await OrderModel.cancelOrder(order.id, req.user!.id);
+      res.json({ message: 'Order cancelled' });
+      return;
+    }
+
+    // Customer: check 1-hour window
+    const orderAge = Date.now() - new Date(order.created_at).getTime();
+    const ONE_HOUR = 60 * 60 * 1000;
+
+    if (orderAge < ONE_HOUR) {
+      // Within 1 hour — cancel directly
+      await OrderModel.cancelOrder(order.id, req.user!.id);
+      res.json({ message: 'Order cancelled' });
+    } else {
+      // After 1 hour — need reason, create cancel request
+      const { reason } = req.body;
+      if (!reason || !reason.trim()) {
+        res.status(400).json({
+          message: 'Order is older than 1 hour. Please provide a reason for cancellation.',
+          requiresReason: true,
+        });
+        return;
+      }
+      const SubModel = await import('../models/subscription.model');
+      const requestId = await SubModel.createCancelRequest(order.id, req.user!.id, reason.trim());
+      res.json({
+        message: 'Cancellation request submitted. Admin will review it.',
+        cancelRequestId: requestId,
+        requiresApproval: true,
+      });
+    }
+  } catch (err: any) {
+    if (err.message?.includes('already pending')) {
+      res.status(409).json({ message: err.message });
+    } else {
+      console.error('cancelOrder error:', err);
+      res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
+    }
   }
 };
 

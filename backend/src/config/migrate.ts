@@ -225,6 +225,17 @@ export const runMigrations = async (): Promise<void> => {
       console.log('  ✅ Added users.wallet_balance');
     }
 
+    // ── wallet_access column ───────────────────────────────────────────────────
+    const [waCols] = await conn.query<any[]>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'
+         AND COLUMN_NAME = 'wallet_access'`
+    );
+    if (!(waCols as any[]).length) {
+      await conn.query(`ALTER TABLE users ADD COLUMN wallet_access ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none'`);
+      console.log('  ✅ Added users.wallet_access');
+    }
+
     // ── Remove out_for_delivery status if it exists in the orders ENUM ─────────
     // First update any existing out_for_delivery orders to 'assigned'
     await conn.query(
@@ -280,6 +291,89 @@ export const runMigrations = async (): Promise<void> => {
         note         VARCHAR(255) NULL,
         created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    // ── subscriptions ──────────────────────────────────────────────────────────
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id  INT NOT NULL,
+        address      VARCHAR(500) NULL,
+        status       ENUM('active','paused','expired','cancelled') NOT NULL DEFAULT 'active',
+        start_date   DATE NOT NULL,
+        end_date     DATE NOT NULL,
+        auto_renew   TINYINT(1) NOT NULL DEFAULT 0,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    // ── subscription_slots ───────────────────────────────────────────────────
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS subscription_slots (
+        id              INT AUTO_INCREMENT PRIMARY KEY,
+        subscription_id INT NOT NULL,
+        slot_label      VARCHAR(50) NOT NULL,
+        delivery_time   TIME NOT NULL,
+        quantity        INT NOT NULL DEFAULT 1,
+        FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    // ── cancel_requests ──────────────────────────────────────────────────────
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS cancel_requests (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        order_id    INT NOT NULL,
+        customer_id INT NOT NULL,
+        reason      VARCHAR(500) NOT NULL,
+        status      ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+        reviewed_by INT NULL,
+        reviewed_at TIMESTAMP NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id)    REFERENCES orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    // ── app_settings ─────────────────────────────────────────────────────────
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        setting_key   VARCHAR(100) PRIMARY KEY,
+        setting_value VARCHAR(500) NOT NULL,
+        updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    await conn.query(`INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('booking_start_time', '08:00')`);
+    await conn.query(`INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('booking_end_time', '18:00')`);
+
+    // ── Add subscription_id to orders if missing ─────────────────────────────
+    const [orderCols] = await conn.query<any[]>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders'
+         AND COLUMN_NAME = 'subscription_id'`
+    );
+    if (!(orderCols as any[]).length) {
+      await conn.query(`ALTER TABLE orders ADD COLUMN subscription_id INT NULL`);
+      console.log('  ✅ Added orders.subscription_id');
+    }
+
+    // ── casual_deliveries — jars given to non-registered persons ─────────────
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS casual_deliveries (
+        id               INT AUTO_INCREMENT PRIMARY KEY,
+        staff_id         INT NOT NULL,
+        person_name      VARCHAR(150) NULL,
+        phone            VARCHAR(20) NULL,
+        quantity         INT NOT NULL DEFAULT 1,
+        amount_collected DECIMAL(10,2) NOT NULL DEFAULT 0,
+        payment_mode     ENUM('cash','online','credit') NOT NULL DEFAULT 'cash',
+        notes            TEXT NULL,
+        created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (staff_id) REFERENCES users(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
 

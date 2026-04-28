@@ -6,7 +6,7 @@ export interface SendPayload {
   userId: number;
   title: string;
   body: string;
-  type: 'order' | 'payment' | 'delivery' | 'approval' | 'stock' | 'general';
+  type: 'order' | 'payment' | 'delivery' | 'approval' | 'stock' | 'general' | 'subscription';
   data?: Record<string, string>;
 }
 

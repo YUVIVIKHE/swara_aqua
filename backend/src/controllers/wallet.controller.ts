@@ -22,31 +22,133 @@ const getRazorpay = () => {
 const notify = (fn: () => Promise<void>) =>
   fn().catch(err => console.warn('FCM (non-fatal):', err?.message));
 
-// GET /api/wallet  — balance + recent transactions
+// ── Wallet access guard ───────────────────────────────────────────────────────
+
+const checkWalletApproved = async (userId: number): Promise<boolean> => {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    'SELECT wallet_access FROM users WHERE id = ?', [userId]
+  );
+  return rows[0]?.wallet_access === 'approved';
+};
+
+// GET /api/wallet  — balance + recent transactions + access status
 export const getWallet = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
 
     const [userRows] = await pool.query<RowDataPacket[]>(
-      'SELECT wallet_balance FROM users WHERE id = ?', [userId]
+      'SELECT wallet_balance, wallet_access FROM users WHERE id = ?', [userId]
     );
-    const balance = Number(userRows[0]?.wallet_balance ?? 0);
+    const balance       = Number(userRows[0]?.wallet_balance ?? 0);
+    const walletAccess  = userRows[0]?.wallet_access ?? 'none';
 
     const [txRows] = await pool.query<RowDataPacket[]>(
       `SELECT * FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
       [userId]
     );
 
-    res.json({ balance, transactions: txRows });
+    res.json({ balance, walletAccess, transactions: txRows });
   } catch (err) {
     console.error('getWallet error:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
 
+// POST /api/wallet/request-access  — customer requests wallet access
+export const requestWalletAccess = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      'SELECT wallet_access FROM users WHERE id = ?', [userId]
+    );
+    const current = rows[0]?.wallet_access;
+    if (current === 'approved') {
+      res.json({ message: 'Wallet already approved', walletAccess: 'approved' }); return;
+    }
+    if (current === 'pending') {
+      res.json({ message: 'Request already pending', walletAccess: 'pending' }); return;
+    }
+    await pool.query('UPDATE users SET wallet_access = ? WHERE id = ?', ['pending', userId]);
+
+    // Notify admin
+    notify(() => NotifService.sendToRole('admin',
+      '💳 Wallet Access Requested',
+      `A customer has requested wallet access.`,
+      'approval'
+    ));
+
+    res.json({ message: 'Wallet access requested. Awaiting admin approval.', walletAccess: 'pending' });
+  } catch (err) {
+    console.error('requestWalletAccess error:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// GET /api/wallet/access-requests  — admin: list pending wallet requests
+export const getWalletAccessRequests = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { status = 'pending' } = req.query as Record<string, string>;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, name, phone, wallet_access, wallet_balance, created_at
+       FROM users WHERE role = 'customer' AND wallet_access = ?
+       ORDER BY created_at DESC`,
+      [status]
+    );
+    res.json({ requests: rows });
+  } catch (err) {
+    console.error('getWalletAccessRequests error:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// PATCH /api/wallet/access-requests/:userId/approve  — admin approves
+export const approveWalletAccess = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    await pool.query('UPDATE users SET wallet_access = ? WHERE id = ?', ['approved', userId]);
+
+    notify(() => NotifService.sendToUser({
+      userId: Number(userId),
+      title: '✅ Wallet Access Approved!',
+      body: 'Your wallet has been activated. You can now top up and pay using your wallet.',
+      type: 'payment',
+    }));
+
+    res.json({ message: 'Wallet access approved' });
+  } catch (err) {
+    console.error('approveWalletAccess error:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// PATCH /api/wallet/access-requests/:userId/reject  — admin rejects
+export const rejectWalletAccess = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const { reason = 'Your wallet access request was not approved.' } = req.body;
+    await pool.query('UPDATE users SET wallet_access = ? WHERE id = ?', ['rejected', userId]);
+
+    notify(() => NotifService.sendToUser({
+      userId: Number(userId),
+      title: '❌ Wallet Access Rejected',
+      body: reason,
+      type: 'payment',
+    }));
+
+    res.json({ message: 'Wallet access rejected' });
+  } catch (err) {
+    console.error('rejectWalletAccess error:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+
 // POST /api/wallet/topup/order  — create Razorpay order for wallet top-up
 export const createTopupOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    if (!(await checkWalletApproved(req.user!.id))) {
+      res.status(403).json({ message: 'Wallet access not approved. Please request access first.' }); return;
+    }
     const amount = Number(req.body.amount);
     if (!amount || amount < 1) {
       res.status(400).json({ message: 'amount must be >= 1' }); return;
@@ -74,6 +176,9 @@ export const createTopupOrder = async (req: AuthRequest, res: Response): Promise
 // POST /api/wallet/topup/verify  — verify Razorpay payment & credit wallet
 export const verifyTopup = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    if (!(await checkWalletApproved(req.user!.id))) {
+      res.status(403).json({ message: 'Wallet access not approved.' }); return;
+    }
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !amount) {

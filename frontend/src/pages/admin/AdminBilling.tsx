@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, RefreshCw, Plus, X, IndianRupee, CheckCircle } from 'lucide-react';
+import { Download, RefreshCw, Plus, X, IndianRupee, CheckCircle, Search, FileText } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
-import { billingApi, Bill } from '../../api/billing';
+import { billingApi, Bill, DeliveryReport } from '../../api/billing';
+import api from '../../api/axios';
 
 const STATUS_STYLE: Record<string, string> = {
   paid:    'bg-green-50 text-green-700 border-green-200',
@@ -27,6 +28,18 @@ export const AdminBilling = () => {
   const [payAmount,   setPayAmount]   = useState('');
   const [paying,      setPaying]      = useState(false);
 
+  // Delivery report
+  const [reportCustId, setReportCustId] = useState('');
+  const [reportStart,  setReportStart]  = useState(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [reportEnd,    setReportEnd]    = useState(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [report, setReport] = useState<DeliveryReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [customers, setCustomers] = useState<{id:number;name:string;phone:string}[]>([]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -40,6 +53,10 @@ export const AdminBilling = () => {
   }, [monthFilter, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api.get('/admin/users').then(({ data }) => setCustomers(data.users.filter((u: any) => u.role === 'customer'))).catch(() => {});
+  }, []);
+
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -88,6 +105,117 @@ export const AdminBilling = () => {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* ── Delivery Report Section ── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-brand-500" />
+          <h3 className="text-sm font-bold text-slate-800">Delivery Report</h3>
+          <span className="text-[10px] text-slate-400">Day / Date Range</span>
+        </div>
+
+        <div className="flex gap-3 flex-wrap items-end">
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase block mb-1">Customer</label>
+            <select value={reportCustId} onChange={e => setReportCustId(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-400 transition-all">
+              <option value="">Select customer...</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
+            </select>
+          </div>
+          <div className="min-w-[120px]">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase block mb-1">From</label>
+            <input type="date" value={reportStart} onChange={e => setReportStart(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-400 transition-all" />
+          </div>
+          <div className="min-w-[120px]">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase block mb-1">To</label>
+            <input type="date" value={reportEnd} onChange={e => setReportEnd(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-400 transition-all" />
+          </div>
+          <Button size="sm" icon={<Search className="w-3.5 h-3.5" />} loading={reportLoading}
+            onClick={async () => {
+              if (!reportCustId) { toast('Select a customer', 'error'); return; }
+              setReportLoading(true); setReport(null);
+              try {
+                const { data } = await billingApi.deliveryReport({ customerId: Number(reportCustId), startDate: reportStart, endDate: reportEnd });
+                setReport(data.report);
+              } catch { toast('Failed to load report', 'error'); }
+              finally { setReportLoading(false); }
+            }}>
+            View
+          </Button>
+        </div>
+
+        {/* Report result */}
+        {report && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            className="bg-slate-50 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-slate-800">{report.customer.name}</p>
+                <p className="text-xs text-slate-400">
+                  {new Date(report.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} —{' '}
+                  {new Date(report.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              </div>
+              <button onClick={() => window.open(billingApi.deliveryReportPdfUrl({ customerId: Number(reportCustId), startDate: reportStart, endDate: reportEnd }), '_blank')}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold hover:opacity-90 transition-all">
+                <Download className="w-3.5 h-3.5" /> PDF
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white rounded-lg p-2.5 text-center">
+                <p className="text-[10px] text-slate-400">Jars</p>
+                <p className="text-lg font-bold text-slate-800">{report.totalJars}</p>
+              </div>
+              <div className="bg-white rounded-lg p-2.5 text-center">
+                <p className="text-[10px] text-slate-400">Rate</p>
+                <p className="text-lg font-bold text-slate-800">₹{report.jarRate}</p>
+              </div>
+              <div className="bg-brand-50 rounded-lg p-2.5 text-center">
+                <p className="text-[10px] text-brand-500">Amount</p>
+                <p className="text-lg font-bold text-brand-700">₹{report.totalAmount}</p>
+              </div>
+            </div>
+            {(() => {
+              const start = new Date(report.startDate + 'T00:00:00');
+              const end   = new Date(report.endDate   + 'T00:00:00');
+              const jarMap = new Map(report.days.map(d => [d.date, d.jars]));
+              const allDates: { date: string; jars: number }[] = [];
+              for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const iso = d.toISOString().split('T')[0];
+                allDates.push({ date: iso, jars: jarMap.get(iso) ?? 0 });
+              }
+              return (
+                <div className="grid gap-1 max-h-48 overflow-y-auto"
+                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(40px, 1fr))' }}>
+                  {allDates.map(({ date, jars }) => {
+                    const d = new Date(date + 'T00:00:00');
+                    const hasJars = jars > 0;
+                    return (
+                      <div key={date}
+                        className={`rounded-lg p-1 text-center border ${
+                          hasJars ? 'bg-green-50 border-green-200' : 'bg-white border-slate-100'
+                        }`}>
+                        <p className="text-[8px] text-slate-400 leading-none">
+                          {d.toLocaleDateString('en-IN', { weekday: 'short' })}
+                        </p>
+                        <p className={`text-[10px] font-bold ${hasJars ? 'text-slate-700' : 'text-slate-300'}`}>
+                          {d.getDate()}
+                        </p>
+                        <p className={`text-xs font-bold ${hasJars ? 'text-green-600' : 'text-slate-200'}`}>
+                          {jars}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </motion.div>
+        )}
       </div>
 
       {/* Filters */}

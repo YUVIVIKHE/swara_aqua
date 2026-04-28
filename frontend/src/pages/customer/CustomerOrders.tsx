@@ -41,6 +41,9 @@ export const CustomerOrders = () => {
   const [submitting,    setSubmitting]    = useState(false);
   const [cancelling,    setCancelling]    = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [orderSuccess,  setOrderSuccess]  = useState<{ orderId: number; quantity: number; total: number; mode: string; scheduledForTomorrow?: boolean } | null>(null);
+  const [cancelReason, setCancelReason]   = useState('');
+  const [showReasonModal, setShowReasonModal] = useState<number | null>(null); // order id
 
   // Auto-open form if navigated with ?new=1
   useEffect(() => {
@@ -48,7 +51,7 @@ export const CustomerOrders = () => {
       setShowForm(true);
       setSearchParams({}, { replace: true });
     }
-  }, []);
+  }, [searchParams]);
 
   const [form, setForm] = useState({
     type:         'instant' as Order['type'],
@@ -98,11 +101,13 @@ export const CustomerOrders = () => {
       });
 
       const orderId: number = orderData.orderId;
+      const scheduledForTomorrow: boolean = orderData.scheduledForTomorrow || false;
+      let modeLabel = 'Cash on Delivery';
 
       // 2. Handle payment
       if (form.paymentMode === 'wallet') {
         await walletApi.payOrder(orderId);
-        toast('Order placed & paid via wallet! 🎉', 'success');
+        modeLabel = 'Paid via Wallet';
 
       } else if (form.paymentMode === 'razorpay') {
         const rzpLoaded = await loadRazorpay();
@@ -120,7 +125,6 @@ export const CustomerOrders = () => {
             order_id:    rzpOrder.orderId,
             handler: async (response: any) => {
               try {
-                // Verify and credit wallet, then immediately debit for order
                 await walletApi.verifyTopup({
                   razorpay_order_id:   response.razorpay_order_id,
                   razorpay_payment_id: response.razorpay_payment_id,
@@ -137,12 +141,11 @@ export const CustomerOrders = () => {
           const rzp = new (window as any).Razorpay(options);
           rzp.open();
         });
-        toast('Order placed & paid via Razorpay! 🎉', 'success');
-
-      } else {
-        // Cash on delivery — no payment now
-        toast('Order placed! Pay on delivery 🎉', 'success');
+        modeLabel = 'Paid via Razorpay';
       }
+
+      // Show success screen
+      setOrderSuccess({ orderId, quantity: form.quantity, total: totalAmount, mode: modeLabel, scheduledForTomorrow });
 
       setShowForm(false);
       resetForm();
@@ -171,15 +174,28 @@ export const CustomerOrders = () => {
   };
 
   // ── Cancel order ─────────────────────────────────────────────────────────────
-  const handleCancel = async (id: number) => {
+  const handleCancel = async (id: number, reason?: string) => {
     setCancelling(true);
     try {
-      await ordersApi.cancel(id);
-      toast('Order cancelled', 'warning');
+      const payload = reason ? { reason } : {};
+      const { data } = await ordersApi.cancel(id, payload);
+      if (data.requiresApproval) {
+        toast('Cancellation request submitted for admin review', 'success');
+        setShowReasonModal(null);
+        setCancelReason('');
+      } else {
+        toast('Order cancelled', 'warning');
+      }
       setSelected(null);
       await refresh();
     } catch (err: any) {
-      toast(err?.response?.data?.message || 'Cannot cancel this order', 'error');
+      const resp = err?.response?.data;
+      if (resp?.requiresReason) {
+        // Need reason — show the reason modal
+        setShowReasonModal(id);
+      } else {
+        toast(resp?.message || 'Cannot cancel this order', 'error');
+      }
     } finally {
       setCancelling(false);
     }
@@ -190,142 +206,250 @@ export const CustomerOrders = () => {
   return (
     <div className="max-w-2xl space-y-5">
 
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">My Orders</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {loading ? 'Loading…' : `${orders.length} order${orders.length !== 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={refresh}>
-            Refresh
-          </Button>
-          <Button size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={() => { setShowForm(v => !v); resetForm(); }}>
-            New Order
-          </Button>
-        </div>
-      </div>
+      {/* ── Order Success Screen ── */}
+      <AnimatePresence>
+        {orderSuccess && (
+          <motion.div
+            key="success-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-gradient-to-br from-brand-600 via-aqua-500 to-emerald-500 px-6"
+          >
+            <motion.div
+              initial={{ scale: 0.7, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.85, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+              className="w-full max-w-sm text-center"
+            >
+              {/* Animated tick circle */}
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.15, type: 'spring', stiffness: 320, damping: 20 }}
+                className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center mx-auto mb-6 shadow-2xl"
+              >
+                <motion.svg
+                  viewBox="0 0 52 52"
+                  className="w-12 h-12"
+                  initial="hidden"
+                  animate="visible"
+                >
+                  <motion.circle
+                    cx="26" cy="26" r="24"
+                    fill="none" stroke="white" strokeWidth="2.5"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ delay: 0.2, duration: 0.5, ease: 'easeOut' }}
+                  />
+                  <motion.path
+                    fill="none" stroke="white" strokeWidth="3.5"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    d="M14 26 l9 9 l15 -16"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ delay: 0.55, duration: 0.4, ease: 'easeOut' }}
+                  />
+                </motion.svg>
+              </motion.div>
+
+              {/* Text */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35 }}
+              >
+                <p className="text-white/80 text-sm font-semibold tracking-wide uppercase mb-1">
+                  {orderSuccess.scheduledForTomorrow ? 'Scheduled for Tomorrow!' : 'Order Confirmed!'}
+                </p>
+                <h2 className="text-4xl font-extrabold text-white mb-1">₹{orderSuccess.total}</h2>
+                <p className="text-white/70 text-sm mb-6">{orderSuccess.quantity} jar{orderSuccess.quantity > 1 ? 's' : ''} · {orderSuccess.mode}</p>
+
+                {/* Order ID badge */}
+                <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-2xl px-5 py-2.5 mb-8">
+                  <Droplets className="w-4 h-4 text-white/80" />
+                  <span className="text-white font-bold text-sm">Order #{orderSuccess.orderId}</span>
+                </div>
+
+                <p className="text-white/60 text-xs mb-8">
+                  {orderSuccess.scheduledForTomorrow
+                    ? '🌙 Placed outside booking hours. Your order will be delivered tomorrow morning!'
+                    : orderSuccess.mode === 'Cash on Delivery'
+                      ? '💧 Your water is on the way! Pay when delivered.'
+                      : '💧 Payment received. Your water is on the way!'}
+                </p>
+
+                <button
+                  onClick={() => setOrderSuccess(null)}
+                  className="w-full bg-white text-brand-700 font-bold text-base py-4 rounded-2xl shadow-xl hover:bg-white/90 active:scale-95 transition-all"
+                >
+                  View My Orders
+                </button>
+              </motion.div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Place Order Form ── */}
       <AnimatePresence>
         {showForm && (
-          <motion.div
-            initial={{ opacity: 0, y: -12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0,   scale: 1 }}
-            exit={{   opacity: 0, y: -12, scale: 0.98 }}
-            transition={{ duration: 0.2 }}
-            className="bg-white rounded-2xl border border-brand-100 shadow-lg p-5">
+          <>
+            {/* Mobile: full-screen overlay backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 md:hidden"
+              onClick={() => setShowForm(false)}
+            />
 
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-800">Place New Order</h3>
-                <p className="text-xs text-slate-400 mt-0.5">₹{PRICE_PER_JAR} per jar</p>
-              </div>
-              <button onClick={() => setShowForm(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="
+                fixed inset-x-0 bottom-0 z-50 md:relative md:inset-auto md:z-auto
+                bg-white rounded-t-3xl md:rounded-2xl
+                border-t border-brand-100 md:border md:shadow-lg
+                max-h-[92vh] md:max-h-none overflow-y-auto
+                shadow-[0_-8px_40px_rgba(0,0,0,0.12)] md:shadow-lg
+              ">
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Order type */}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Order Type</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(['instant', 'preorder', 'monthly', 'bulk'] as const).map(t => (
-                    <button key={t} type="button"
-                      onClick={() => setForm(f => ({ ...f, type: t }))}
-                      className={`py-2.5 rounded-xl text-xs font-semibold border transition-all capitalize
-                        ${form.type === t
-                          ? 'bg-brand-600 text-white border-brand-600 shadow-brand'
-                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-brand-300 hover:bg-brand-50'}`}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
+              {/* Drag handle (mobile only) */}
+              <div className="flex justify-center pt-3 pb-1 md:hidden">
+                <div className="w-10 h-1 rounded-full bg-slate-300" />
               </div>
 
-              {/* Quantity + total */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Quantity (Jars)</label>
-                  <input
-                    type="number" min={1} value={form.quantity}
-                    onChange={e => setForm(f => ({ ...f, quantity: Math.max(1, Number(e.target.value)) }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10 transition-all font-semibold" />
-                </div>
-                <div className="flex flex-col justify-end">
-                  <div className="bg-gradient-to-br from-brand-50 to-aqua-400/10 border border-brand-100 rounded-2xl px-4 py-3 text-center">
-                    <p className="text-xs text-brand-500 font-medium">Total Amount</p>
-                    <p className="text-xl font-bold text-brand-700">₹{totalAmount}</p>
+              <div className="p-5 pt-3 md:p-5">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <h3 className="text-base md:text-sm font-bold text-slate-800">Place New Order</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">₹{PRICE_PER_JAR} per jar</p>
                   </div>
+                  <button onClick={() => setShowForm(false)} className="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center rounded-xl md:rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
+
+                <form onSubmit={handleSubmit} className="space-y-5 md:space-y-4">
+                  {/* Order type */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Order Type</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {(['instant', 'preorder', 'monthly', 'bulk'] as const).map(t => (
+                        <button key={t} type="button"
+                          onClick={() => setForm(f => ({ ...f, type: t }))}
+                          className={`py-3 md:py-2.5 rounded-xl text-xs font-semibold border transition-all capitalize
+                            ${form.type === t
+                              ? 'bg-brand-600 text-white border-brand-600 shadow-brand'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-brand-300 hover:bg-brand-50'}`}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Quantity + total */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Quantity (Jars)</label>
+                      <input
+                        type="number" min={1} value={form.quantity}
+                        onChange={e => setForm(f => ({ ...f, quantity: Math.max(1, Number(e.target.value)) }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10 transition-all font-semibold" />
+                    </div>
+                    <div className="flex flex-col justify-end">
+                      <div className="bg-gradient-to-br from-brand-50 to-aqua-400/10 border border-brand-100 rounded-2xl px-4 py-3 text-center">
+                        <p className="text-xs text-brand-500 font-medium">Total Amount</p>
+                        <p className="text-xl font-bold text-brand-700">₹{totalAmount}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Delivery date (preorder only) */}
+                  {form.type === 'preorder' && (
+                    <Input
+                      label="Delivery Date & Time"
+                      type="datetime-local"
+                      value={form.deliveryDate}
+                      onChange={e => setForm(f => ({ ...f, deliveryDate: e.target.value }))}
+                      required />
+                  )}
+
+                  {/* Address picker */}
+                  <AddressPicker
+                    address={form.address}
+                    onSelect={(addr) => setForm(f => ({ ...f, address: addr }))}
+                  />
+
+                  {/* Notes */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Notes (optional)</label>
+                    <textarea
+                      value={form.notes}
+                      onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                      placeholder="Any special instructions…"
+                      rows={2}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm placeholder-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10 transition-all resize-none" />
+                  </div>
+
+                  {/* Payment method — stacked on mobile, row on desktop */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Payment Method</label>
+                    <div className="flex flex-col sm:grid sm:grid-cols-3 gap-2">
+                      {([
+                        { key: 'cod',      label: 'Cash on Delivery', shortLabel: 'Cash / COD', icon: <Banknote className="w-5 h-5 sm:w-4 sm:h-4" /> },
+                        { key: 'wallet',   label: `Wallet (₹${walletBalance})`, shortLabel: `Wallet · ₹${walletBalance}`, icon: <Wallet className="w-5 h-5 sm:w-4 sm:h-4" /> },
+                        { key: 'razorpay', label: 'Pay Online', shortLabel: 'Pay Online', icon: <CreditCard className="w-5 h-5 sm:w-4 sm:h-4" /> },
+                      ] as const).map(({ key, label, shortLabel, icon }) => (
+                        <button key={key} type="button"
+                          onClick={() => setForm(f => ({ ...f, paymentMode: key }))}
+                          className={`
+                            flex items-center gap-3 py-3 px-4 rounded-xl text-sm font-semibold border transition-all
+                            sm:flex-col sm:items-center sm:gap-1.5 sm:py-3 sm:px-2 sm:text-xs
+                            ${form.paymentMode === key
+                              ? 'bg-brand-600 text-white border-brand-600 shadow-brand'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-brand-300 hover:bg-brand-50'}`}>
+                          {icon}
+                          <span className="sm:hidden">{shortLabel}</span>
+                          <span className="hidden sm:inline text-center leading-tight">{label}</span>
+                          {form.paymentMode === key && (
+                            <Check className="w-4 h-4 ml-auto sm:hidden" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    {form.paymentMode === 'wallet' && walletBalance < totalAmount && (
+                      <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
+                        Insufficient balance — need ₹{totalAmount - walletBalance} more.
+                        <a href="/customer/wallet" className="underline font-semibold">Top up</a>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Sticky submit on mobile */}
+                  <div className="sticky bottom-0 pt-2 pb-1 bg-white -mx-5 px-5 md:relative md:mx-0 md:px-0 md:pt-0 md:pb-0">
+                    <Button type="submit" loading={submitting} size="lg" className="w-full !py-4 md:!py-3.5 text-sm"
+                      icon={<Droplets className="w-4 h-4" />}>
+                      <span className="sm:hidden">
+                        {form.paymentMode === 'cod' ? `Place Order · ₹${totalAmount}`
+                         : form.paymentMode === 'wallet' ? `Pay ₹${totalAmount} · Wallet`
+                         : `Pay ₹${totalAmount} · Online`}
+                      </span>
+                      <span className="hidden sm:inline">
+                        {form.paymentMode === 'cod'      ? `Place Order — Pay ₹${totalAmount} on delivery`
+                         : form.paymentMode === 'wallet' ? `Pay ₹${totalAmount} from Wallet`
+                         : `Pay ₹${totalAmount} via Razorpay`}
+                      </span>
+                    </Button>
+                  </div>
+                </form>
               </div>
-
-              {/* Delivery date (preorder only) */}
-              {form.type === 'preorder' && (
-                <Input
-                  label="Delivery Date & Time"
-                  type="datetime-local"
-                  value={form.deliveryDate}
-                  onChange={e => setForm(f => ({ ...f, deliveryDate: e.target.value }))}
-                  required />
-              )}
-
-              {/* Address picker */}
-              <AddressPicker
-                address={form.address}
-                onSelect={(addr) => setForm(f => ({ ...f, address: addr }))}
-              />
-
-              {/* Notes */}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Notes (optional)</label>
-                <textarea
-                  value={form.notes}
-                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  placeholder="Any special instructions…"
-                  rows={2}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm placeholder-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10 transition-all resize-none" />
-              </div>
-
-              {/* Payment method */}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Payment Method</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    { key: 'cod',      label: 'Cash on Delivery', icon: <Banknote className="w-4 h-4" /> },
-                    { key: 'wallet',   label: `Wallet (₹${walletBalance})`, icon: <Wallet className="w-4 h-4" /> },
-                    { key: 'razorpay', label: 'Pay Online',        icon: <CreditCard className="w-4 h-4" /> },
-                  ] as const).map(({ key, label, icon }) => (
-                    <button key={key} type="button"
-                      onClick={() => setForm(f => ({ ...f, paymentMode: key }))}
-                      className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-xs font-semibold border transition-all
-                        ${form.paymentMode === key
-                          ? 'bg-brand-600 text-white border-brand-600 shadow-brand'
-                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-brand-300 hover:bg-brand-50'}`}>
-                      {icon}
-                      <span className="text-center leading-tight">{label}</span>
-                    </button>
-                  ))}
-                </div>
-                {form.paymentMode === 'wallet' && walletBalance < totalAmount && (
-                  <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1">
-                    Insufficient balance — need ₹{totalAmount - walletBalance} more.
-                    <a href="/customer/wallet" className="underline font-semibold">Top up</a>
-                  </p>
-                )}
-              </div>
-
-              <Button type="submit" loading={submitting} size="lg" className="w-full"
-                icon={<Droplets className="w-4 h-4" />}>
-                {form.paymentMode === 'cod'      ? `Place Order — Pay ₹${totalAmount} on delivery`
-                 : form.paymentMode === 'wallet' ? `Pay ₹${totalAmount} from Wallet`
-                 : `Pay ₹${totalAmount} via Razorpay`}
-              </Button>
-            </form>
-          </motion.div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 
@@ -527,15 +651,59 @@ export const CustomerOrders = () => {
                       </div>
                     )}
 
-                    {/* Cancel button — only for pending orders */}
-                    {selected.order.status === 'pending' && (
-                      <Button
-                        variant="danger" size="md" className="w-full"
-                        loading={cancelling}
-                        onClick={() => handleCancel(selected.order.id)}>
-                        Cancel Order
-                      </Button>
+                    {/* Cancel button — smart policy */}
+                    {!['completed', 'cancelled'].includes(selected.order.status) && (
+                      <>
+                        {(() => {
+                          const ageMs = Date.now() - new Date(selected.order.created_at).getTime();
+                          const isWithinHour = ageMs < 60 * 60 * 1000;
+                          return isWithinHour ? (
+                            <Button
+                              variant="danger" size="md" className="w-full"
+                              loading={cancelling}
+                              onClick={() => handleCancel(selected.order.id)}>
+                              Cancel Order
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="danger" size="md" className="w-full"
+                              loading={cancelling}
+                              onClick={() => setShowReasonModal(selected.order.id)}>
+                              Request Cancellation
+                            </Button>
+                          );
+                        })()}
+                      </>
                     )}
+
+                    {/* Cancel reason modal */}
+                    <AnimatePresence>
+                      {showReasonModal === selected.order.id && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden">
+                          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3 mt-2">
+                            <p className="text-xs font-bold text-red-700">This order is older than 1 hour. Please provide a reason:</p>
+                            <textarea
+                              value={cancelReason}
+                              onChange={e => setCancelReason(e.target.value)}
+                              placeholder="Why do you want to cancel?"
+                              rows={2}
+                              className="w-full bg-white border border-red-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none focus:border-red-400 transition-all resize-none" />
+                            <div className="flex gap-2">
+                              <Button variant="secondary" size="sm" className="flex-1"
+                                onClick={() => { setShowReasonModal(null); setCancelReason(''); }}>
+                                Never mind
+                              </Button>
+                              <Button variant="danger" size="sm" className="flex-1" loading={cancelling}
+                                onClick={() => handleCancel(selected.order.id, cancelReason)}
+                                disabled={!cancelReason.trim()}>
+                                Submit Request
+                              </Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </>
               )}
@@ -664,7 +832,7 @@ const AddressPicker = ({ address, onSelect }: { address: string; onSelect: (addr
           <div className="flex gap-2">
             {['Home', 'Work', 'Other'].map(l => (
               <button key={l} type="button" onClick={() => setNewLabel(l)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all
                   ${newLabel === l ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200'}`}>
                 {LABEL_ICONS[l]}{l}
               </button>
@@ -677,28 +845,29 @@ const AddressPicker = ({ address, onSelect }: { address: string; onSelect: (addr
             rows={2}
             className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10 transition-all resize-none"
           />
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={handleLocate}
-                className="flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors">
-                <Navigation className="w-3 h-3" />
-                {locating ? 'Locating...' : 'Use GPS'}
-              </button>
-              <button type="button" onClick={() => setShowMap(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-brand-600 transition-colors">                <Map className="w-3 h-3" />
-                Pick on Map
-              </button>
-            </div>
-            <div className="flex gap-2">
-              {addresses.length > 0 && (
-                <button type="button" onClick={() => setShowNew(false)}
-                  className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-              )}
-              <button type="button" onClick={handleSaveNew} disabled={!newAddr.trim() || saving}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 text-white text-xs font-semibold rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-all">
-                <Plus className="w-3 h-3" />{saving ? 'Saving...' : 'Save & Use'}
-              </button>
-            </div>
+          {/* Location tools row */}
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={handleLocate}
+              className="flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors">
+              <Navigation className="w-3.5 h-3.5" />
+              {locating ? 'Locating...' : 'Use GPS'}
+            </button>
+            <button type="button" onClick={() => setShowMap(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-brand-600 transition-colors">
+              <Map className="w-3.5 h-3.5" />
+              Pick on Map
+            </button>
+          </div>
+          {/* Action buttons row — wraps on small screens */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {addresses.length > 0 && (
+              <button type="button" onClick={() => setShowNew(false)}
+                className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
+            )}
+            <button type="button" onClick={handleSaveNew} disabled={!newAddr.trim() || saving}
+              className="flex items-center gap-1.5 px-4 py-2 bg-brand-600 text-white text-xs font-semibold rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-all">
+              <Plus className="w-3 h-3" />{saving ? 'Saving...' : 'Save & Use'}
+            </button>
           </div>
         </div>
       )}

@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as BillingModel from '../models/billing.model';
 import * as NotifService from '../services/notification.service';
-import { generateBillPDF } from '../services/pdf.service';
+import { generateBillPDF, generateReportPDF } from '../services/pdf.service';
 import pool from '../config/db';
 import { RowDataPacket } from 'mysql2/promise';
 import { z } from 'zod';
@@ -81,10 +81,10 @@ export const downloadBillPDF = async (req: AuthRequest, res: Response): Promise<
     if (req.user!.role === 'customer' && bill.customer_id !== req.user!.id) {
       res.status(403).json({ message: 'Access denied' }); return;
     }
-    generateBillPDF(bill, res);
+    await generateBillPDF(bill, res);
   } catch (err) {
     console.error('downloadBillPDF error:', err);
-    res.status(500).json({ message: 'Failed to generate PDF' });
+    if (!res.headersSent) res.status(500).json({ message: 'Failed to generate PDF' });
   }
 };
 
@@ -186,5 +186,97 @@ export const payBillWithWallet = async (req: AuthRequest, res: Response): Promis
   } catch (err) {
     console.error('payBillWithWallet error:', err);
     res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
+  }
+};
+
+// ── Delivery Report — flexible date range ────────────────────────────────────
+
+const getReportData = async (customerId: number, startDate: string, endDate: string) => {
+  // Customer info
+  const [custRows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, name, phone, COALESCE(jar_rate, 50) AS jar_rate FROM users WHERE id = ?`,
+    [customerId]
+  );
+  if (!custRows.length) return null;
+  const customer = custRows[0];
+
+  // Daily breakdown
+  const [dailyRows] = await pool.query<RowDataPacket[]>(
+    `SELECT DATE(d.delivered_at) AS delivery_date,
+            SUM(d.delivered_quantity) AS jars
+     FROM deliveries d
+     JOIN orders o ON o.id = d.order_id
+     WHERE o.customer_id = ?
+       AND DATE(d.delivered_at) BETWEEN ? AND ?
+       AND d.status = 'delivered'
+     GROUP BY DATE(d.delivered_at)
+     ORDER BY delivery_date ASC`,
+    [customerId, startDate, endDate]
+  );
+
+  const days = dailyRows.map((r: any) => ({
+    date: new Date(r.delivery_date).toISOString().split('T')[0],
+    jars: Number(r.jars),
+  }));
+
+  const totalJars = days.reduce((s, d) => s + d.jars, 0);
+  const jarRate = Number(customer.jar_rate);
+  const totalAmount = totalJars * jarRate;
+
+  return {
+    customer: {
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      jar_rate: jarRate,
+    },
+    startDate,
+    endDate,
+    totalJars,
+    jarRate,
+    totalAmount,
+    days,
+  };
+};
+
+// GET /api/billing/delivery-report?customerId=X&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+export const getDeliveryReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    let { customerId, startDate, endDate } = req.query as Record<string, string>;
+
+    // Customer can only see their own
+    if (req.user!.role === 'customer') customerId = String(req.user!.id);
+
+    if (!customerId) { res.status(400).json({ message: 'customerId is required' }); return; }
+    if (!startDate || !endDate) { res.status(400).json({ message: 'startDate and endDate are required (YYYY-MM-DD)' }); return; }
+
+    const data = await getReportData(Number(customerId), startDate, endDate);
+    if (!data) { res.status(404).json({ message: 'Customer not found' }); return; }
+
+    res.json({ report: data });
+  } catch (err) {
+    console.error('getDeliveryReport error:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// GET /api/billing/delivery-report/pdf?customerId=X&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+export const getDeliveryReportPDF = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    let { customerId, startDate, endDate, token } = req.query as Record<string, string>;
+
+    if (req.user!.role === 'customer') customerId = String(req.user!.id);
+
+    if (!customerId || !startDate || !endDate) {
+      res.status(400).json({ message: 'customerId, startDate, and endDate are required' }); return;
+    }
+
+    const data = await getReportData(Number(customerId), startDate, endDate);
+    if (!data) { res.status(404).json({ message: 'Customer not found' }); return; }
+
+    await generateReportPDF(data, res);
+  } catch (err) {
+    console.error('getDeliveryReportPDF error:', err);
+    if (!res.headersSent) res.status(500).json({ message: 'Failed to generate PDF' });
   }
 };

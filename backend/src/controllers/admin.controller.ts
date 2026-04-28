@@ -211,6 +211,134 @@ export const getCustomerBalances = async (_req: AuthRequest, res: Response): Pro
   }
 };
 
+export const createCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { name, phone, password, jarRate, address } = req.body;
+
+    if (!name || !phone || !password) {
+      res.status(400).json({ message: 'name, phone and password are required' });
+      return;
+    }
+    if (password.length < 6) {
+      res.status(400).json({ message: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    const existing = await UserModel.findByPhone(phone);
+    if (existing) {
+      res.status(409).json({ message: 'Phone number already registered' });
+      return;
+    }
+
+    const hashed = await bcrypt.hash(password, 12);
+    const rate = jarRate && Number(jarRate) > 0 ? Number(jarRate) : 50;
+
+    const [result] = await pool.query<any>(
+      "INSERT INTO users (name, phone, password, role, status, jar_rate) VALUES (?, ?, ?, 'customer', 'active', ?)",
+      [name, phone, hashed, rate]
+    );
+
+    const userId = result.insertId;
+
+    // Save address if provided
+    if (address && address.trim()) {
+      await pool.query(
+        "INSERT INTO user_addresses (user_id, label, address, is_default) VALUES (?, 'Home', ?, 1)",
+        [userId, address.trim()]
+      );
+    }
+
+    res.status(201).json({ message: 'Customer account created', userId });
+  } catch (err) {
+    console.error('createCustomer error:', err);
+    res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
+  }
+};
+
+export const createOrderForCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { customerId, type, quantity, deliveryDate, notes, address } = req.body;
+
+    if (!customerId || !type || !quantity) {
+      res.status(400).json({ message: 'customerId, type and quantity are required' });
+      return;
+    }
+    if (!['instant', 'preorder', 'monthly', 'bulk'].includes(type)) {
+      res.status(400).json({ message: 'Invalid order type' });
+      return;
+    }
+    if (type === 'preorder' && !deliveryDate) {
+      res.status(400).json({ message: 'deliveryDate is required for preorder' });
+      return;
+    }
+
+    // Verify customer exists
+    const [custRows] = await pool.query<RowDataPacket[]>(
+      "SELECT id, name, jar_rate FROM users WHERE id = ? AND role = 'customer'",
+      [customerId]
+    );
+    if (!custRows.length) {
+      res.status(404).json({ message: 'Customer not found' });
+      return;
+    }
+
+    const customer = custRows[0];
+    const pricePerJar = Number(customer.jar_rate) || 50;
+    const totalAmount = Number(quantity) * pricePerJar;
+
+    // Create the order
+    const [orderResult] = await pool.query<any>(
+      `INSERT INTO orders
+         (customer_id, type, quantity, price_per_jar, total_amount,
+          delivery_date, notes, address)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        customerId, type, Number(quantity), pricePerJar, totalAmount,
+        deliveryDate || null,
+        notes || null,
+        address || null,
+      ]
+    );
+
+    const orderId = orderResult.insertId;
+
+    // Add timeline entry
+    await pool.query(
+      'INSERT INTO order_timeline (order_id, status, note, created_by) VALUES (?, ?, ?, ?)',
+      [orderId, 'pending', `Order placed by admin on behalf of ${customer.name}`, req.user!.id]
+    );
+
+    // Auto-assign to staff with least active orders (same logic as order.controller)
+    const [staffRows] = await pool.query<RowDataPacket[]>(`
+      SELECT u.id, u.name,
+             COUNT(o.id) AS active_order_count
+      FROM users u
+      LEFT JOIN orders o ON o.staff_id = u.id
+                        AND o.status NOT IN ('completed','cancelled')
+      WHERE u.role = 'staff' AND u.status = 'active'
+      GROUP BY u.id, u.name
+      ORDER BY active_order_count ASC, u.id ASC
+    `);
+
+    if (staffRows.length > 0) {
+      const assignedStaff = staffRows[0] as any;
+      await pool.query(
+        `UPDATE orders SET staff_id = ?, status = 'assigned', updated_at = NOW() WHERE id = ?`,
+        [assignedStaff.id, orderId]
+      );
+      await pool.query(
+        'INSERT INTO order_timeline (order_id, status, note, created_by) VALUES (?, ?, ?, ?)',
+        [orderId, 'assigned', `Auto-assigned to ${assignedStaff.name}`, req.user!.id]
+      );
+    }
+
+    res.status(201).json({ message: 'Order placed successfully', orderId, totalAmount });
+  } catch (err) {
+    console.error('createOrderForCustomer error:', err);
+    res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
+  }
+};
+
 export const getStaffProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);

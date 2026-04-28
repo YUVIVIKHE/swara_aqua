@@ -41,3 +41,18 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response): Prom
     res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
   }
 };
+
+// GET /api/reports/customer-growth?period=daily|monthly
+export const getCustomerGrowth = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { period = 'daily', days, months } = req.query as Record<string, string>;
+    const data = period === 'monthly'
+      ? await Reports.getMonthlyCustomerGrowth(Number(months) || 12)
+      : await Reports.getDailyCustomerGrowth(Number(days) || 30);
+    res.json({ data, period });
+  } catch (err) {
+    console.error('getCustomerGrowth error:', err);
+    res.status(500).json({ message: 'Internal server error', detail: (err as Error).message });
+  }
+};
+

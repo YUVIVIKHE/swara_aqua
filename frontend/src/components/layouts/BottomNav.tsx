@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { LucideIcon, MoreHorizontal, X, Plus } from 'lucide-react';
+import { LucideIcon, MoreHorizontal, X } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -26,15 +26,28 @@ const SimpleBottomNav = ({ items, onOrderPress }: Props) => {
               <NavTab key={to} to={to} label={label} Icon={Icon} />
             ))}
 
-            {/* Center Order button */}
-            <div className="flex-1 flex flex-col items-center justify-center gap-0.5 px-1">
+            {/* Center — pill Order button */}
+            <div className="flex-1 flex flex-col items-center justify-center relative -mt-5">
               <button
                 onClick={onOrderPress}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-brand-600 to-aqua-500 text-white text-xs font-bold px-4 py-2 rounded-2xl shadow-[0_4px_14px_rgba(37,99,235,0.4)] active:scale-95 transition-transform"
+                className="relative group overflow-hidden flex items-center gap-1.5 px-4 py-2.5 rounded-2xl
+                  bg-gradient-to-r from-brand-600 to-aqua-500
+                  shadow-[0_4px_20px_rgba(37,99,235,0.5)]
+                  active:scale-95 transition-all duration-200"
               >
-                <Plus className="w-4 h-4" strokeWidth={2.5} />
-                Order
+                {/* Shimmer sweep */}
+                <span
+                  className="pointer-events-none absolute inset-0 -skew-x-12 translate-x-[-110%] group-hover:translate-x-[110%] transition-transform duration-700 ease-in-out"
+                  style={{ background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.25),transparent)' }}
+                />
+                {/* Droplet icon */}
+                <svg viewBox="0 0 24 24" className="w-4 h-4 text-white fill-current shrink-0" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2C12 2 5 9.5 5 14a7 7 0 0 0 14 0c0-4.5-7-12-7-12z" />
+                </svg>
+                <span className="text-white text-xs font-bold tracking-wide relative z-10">Order Now</span>
               </button>
+              {/* Ambient glow underneath */}
+              <span className="absolute bottom-0 w-20 h-1.5 rounded-full bg-brand-400/30 blur-md" />
             </div>
 
             {/* Right 2 items */}

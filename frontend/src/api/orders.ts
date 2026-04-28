@@ -59,8 +59,8 @@ export const ordersApi = {
   updateStatus: (id: number, status: string) =>
     api.put(`/orders/${id}/status`, { status }),
 
-  cancel: (id: number) =>
-    api.delete(`/orders/${id}`),
+  cancel: (id: number, data?: { reason?: string }) =>
+    api.delete(`/orders/${id}`, { data }),
 
   stats: () =>
     api.get('/orders/stats'),

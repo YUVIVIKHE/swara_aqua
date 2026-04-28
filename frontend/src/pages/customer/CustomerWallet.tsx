@@ -1,33 +1,126 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, RefreshCw, X, Check } from 'lucide-react';
+import {
+  Wallet, Plus, ArrowUpRight, ArrowDownLeft, RefreshCw,
+  X, Check, Lock, Clock, ShieldCheck, ShieldX, Send,
+} from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
-import { walletApi, WalletTransaction } from '../../api/wallet';
+import { walletApi, WalletTransaction, WalletAccess } from '../../api/wallet';
 import { loadRazorpay } from '../../utils/razorpay';
 
 const QUICK_AMOUNTS = [50, 100, 200, 500, 1000];
 
+// ── Access Gate component ────────────────────────────────────────────────────
+
+const WalletAccessGate = ({
+  status, onRequest, requesting,
+}: { status: WalletAccess; onRequest: () => void; requesting: boolean }) => {
+  const cfg = {
+    none: {
+      icon: Lock,
+      iconBg: 'bg-slate-100',
+      iconColor: 'text-slate-500',
+      title: 'Wallet Not Activated',
+      desc: 'Your wallet is currently locked. Request access from admin to start using it.',
+      badge: null,
+      showBtn: true,
+    },
+    pending: {
+      icon: Clock,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-500',
+      title: 'Request Pending',
+      desc: 'Your wallet access request has been sent. Admin will review and approve it shortly.',
+      badge: { label: 'Pending Approval', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+      showBtn: false,
+    },
+    rejected: {
+      icon: ShieldX,
+      iconBg: 'bg-red-50',
+      iconColor: 'text-red-500',
+      title: 'Request Rejected',
+      desc: 'Your wallet access request was rejected by admin. You can submit a new request.',
+      badge: { label: 'Rejected', color: 'bg-red-50 text-red-700 border-red-200' },
+      showBtn: true,
+    },
+  }[status] ?? cfg;
+
+  const Icon = cfg.icon;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+      className="bg-white rounded-3xl border border-slate-100 shadow-card p-8 text-center">
+
+      {/* Icon */}
+      <div className={`w-20 h-20 ${cfg.iconBg} rounded-3xl flex items-center justify-center mx-auto mb-5`}>
+        <Icon className={`w-9 h-9 ${cfg.iconColor}`} />
+      </div>
+
+      {/* Badge */}
+      {cfg.badge && (
+        <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border mb-4 ${cfg.badge.color}`}>
+          {status === 'pending' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />}
+          {cfg.badge.label}
+        </span>
+      )}
+
+      <h2 className="text-base font-bold text-slate-800 mb-2">{cfg.title}</h2>
+      <p className="text-sm text-slate-400 leading-relaxed mb-6">{cfg.desc}</p>
+
+      {cfg.showBtn && (
+        <Button loading={requesting} icon={<Send className="w-4 h-4" />} onClick={onRequest}
+          className="w-full">
+          {status === 'rejected' ? 'Re-request Wallet Access' : 'Request Wallet Access'}
+        </Button>
+      )}
+
+      {status === 'pending' && (
+        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400">
+          <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          Awaiting admin approval — we'll notify you
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
+// ── Main Wallet Page ─────────────────────────────────────────────────────────
+
 export const CustomerWallet = () => {
   const { toast } = useToast();
-  const [balance,      setBalance]      = useState(0);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [loading,      setLoading]      = useState(true);
-  const [showTopup,    setShowTopup]    = useState(false);
-  const [amount,       setAmount]       = useState('');
-  const [paying,       setPaying]       = useState(false);
+  const [balance,       setBalance]      = useState(0);
+  const [walletAccess,  setWalletAccess] = useState<WalletAccess>('none');
+  const [transactions,  setTransactions] = useState<WalletTransaction[]>([]);
+  const [loading,       setLoading]      = useState(true);
+  const [showTopup,     setShowTopup]    = useState(false);
+  const [amount,        setAmount]       = useState('');
+  const [paying,        setPaying]       = useState(false);
+  const [requesting,    setRequesting]   = useState(false);
 
   const load = useCallback(async () => {
     try {
       const { data } = await walletApi.get();
       setBalance(data.balance);
+      setWalletAccess(data.walletAccess ?? 'none');
       setTransactions(data.transactions);
     } catch { toast('Failed to load wallet', 'error'); }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleRequestAccess = async () => {
+    setRequesting(true);
+    try {
+      const { data } = await walletApi.requestAccess();
+      setWalletAccess(data.walletAccess);
+      toast('Wallet access request sent!', 'success');
+    } catch (err: any) {
+      toast(err?.response?.data?.message || 'Request failed', 'error');
+    } finally { setRequesting(false); }
+  };
 
   const handleTopup = async () => {
     const amt = Number(amount);
@@ -65,7 +158,6 @@ export const CustomerWallet = () => {
             } catch { reject(new Error('Verification failed')); }
           },
           modal: { ondismiss: () => reject(new Error('dismissed')) },
-          prefill: {},
           theme: { color: '#2563eb' },
         };
         const rzp = new (window as any).Razorpay(options);
@@ -82,8 +174,50 @@ export const CustomerWallet = () => {
     razorpay: 'Razorpay', cash: 'Cash', wallet: 'Wallet', refund: 'Refund',
   };
 
+  if (loading) return (
+    <div className="max-w-lg space-y-4">
+      <Skeleton className="h-40 rounded-3xl" />
+      <Skeleton className="h-64 rounded-2xl" />
+    </div>
+  );
+
+  // ── Not approved → show gate ─────────────────────────────────────────────
+  if (walletAccess !== 'approved') {
+    return (
+      <div className="max-w-lg">
+        {/* Locked balance card */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-br from-slate-600 to-slate-700 rounded-3xl p-6 relative overflow-hidden mb-4">
+          <div className="absolute -right-8 -top-8 w-36 h-36 rounded-full bg-white/5" />
+          <div className="absolute right-8 -bottom-6 w-20 h-20 rounded-full bg-white/5" />
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-1">
+              <Lock className="w-4 h-4 text-white/50" />
+              <p className="text-white/50 text-sm font-medium">Wallet Balance</p>
+            </div>
+            <p className="text-4xl font-bold text-white/30 mt-1">₹ — — —</p>
+            <p className="text-white/40 text-xs mt-3">Wallet locked • Request access to activate</p>
+          </div>
+        </motion.div>
+
+        <WalletAccessGate
+          status={walletAccess}
+          onRequest={handleRequestAccess}
+          requesting={requesting}
+        />
+      </div>
+    );
+  }
+
+  // ── Approved → full wallet UI ────────────────────────────────────────────
   return (
     <div className="max-w-lg space-y-4">
+
+      {/* Approved badge */}
+      <div className="flex items-center gap-2 px-1">
+        <ShieldCheck className="w-4 h-4 text-green-500" />
+        <p className="text-xs font-semibold text-green-600">Wallet Activated</p>
+      </div>
 
       {/* Balance card */}
       <motion.div
@@ -96,11 +230,7 @@ export const CustomerWallet = () => {
             <Wallet className="w-5 h-5 text-white/80" />
             <p className="text-white/80 text-sm font-medium">Wallet Balance</p>
           </div>
-          {loading ? (
-            <Skeleton className="h-10 w-36 bg-white/20 rounded-xl mt-1" />
-          ) : (
-            <p className="text-4xl font-bold text-white mt-1">₹{balance.toFixed(2)}</p>
-          )}
+          <p className="text-4xl font-bold text-white mt-1">₹{balance.toFixed(2)}</p>
           <Button
             size="sm"
             className="mt-4 bg-white/20 hover:bg-white/30 text-white border-white/30 border backdrop-blur-sm"
@@ -128,7 +258,6 @@ export const CustomerWallet = () => {
               </button>
             </div>
 
-            {/* Quick amounts */}
             <div className="flex flex-wrap gap-2 mb-4">
               {QUICK_AMOUNTS.map(q => (
                 <button key={q} type="button"
@@ -151,10 +280,8 @@ export const CustomerWallet = () => {
                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-8 pr-4 py-3 text-sm font-semibold outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/10 transition-all" />
             </div>
 
-            <Button
-              className="w-full" loading={paying}
-              icon={<Check className="w-4 h-4" />}
-              onClick={handleTopup}>
+            <Button className="w-full" loading={paying}
+              icon={<Check className="w-4 h-4" />} onClick={handleTopup}>
               Pay ₹{amount || '0'} via Razorpay
             </Button>
           </motion.div>
@@ -172,11 +299,7 @@ export const CustomerWallet = () => {
           </button>
         </div>
 
-        {loading ? (
-          <div className="p-4 space-y-3">
-            {[0, 1, 2].map(i => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
-          </div>
-        ) : transactions.length === 0 ? (
+        {transactions.length === 0 ? (
           <div className="py-10 text-center">
             <Wallet className="w-8 h-8 text-slate-200 mx-auto mb-2" />
             <p className="text-xs text-slate-400">No transactions yet</p>

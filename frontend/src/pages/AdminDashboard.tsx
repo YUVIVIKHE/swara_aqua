@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, UsersRound, Package, Bell, Warehouse, CreditCard, FileText, BarChart2, Image } from 'lucide-react';
+import { LayoutDashboard, Users, UsersRound, Package, Bell, Warehouse, CreditCard, FileText, BarChart2, Image, Wallet, UserRound } from 'lucide-react';
 import { DashboardLayout } from '../components/layouts/DashboardLayout';
 import { AdminHome } from './admin/AdminHome';
 import { AdminUsers } from './admin/AdminUsers';
@@ -14,6 +14,8 @@ import { AdminCustomerProfile } from './admin/AdminCustomerProfile';
 import { AdminStaffProfile } from './admin/AdminStaffProfile';
 import { AdminProfile } from './admin/AdminProfile';
 import { AdminBanners } from './admin/AdminBanners';
+import { AdminWalletRequests } from './admin/AdminWalletRequests';
+import { AdminCasualDeliveries } from './admin/AdminCasualDeliveries';
 
 const NAV = [
   { label: 'Dashboard',    icon: LayoutDashboard, to: '/admin' },
@@ -25,7 +27,9 @@ const NAV = [
   { label: 'Transactions', icon: CreditCard,      to: '/admin/transactions' },
   { label: 'Reports',      icon: BarChart2,       to: '/admin/reports' },
   { label: 'Banners',      icon: Image,           to: '/admin/banners' },
-  { label: 'Notifications',icon: Bell,            to: '/admin/notifications' },
+  { label: 'Wallet Requests',     icon: Wallet,    to: '/admin/wallet-requests' },
+  { label: 'Casual Deliveries',   icon: UserRound, to: '/admin/casual-deliveries' },
+  { label: 'Notifications', icon: Bell, to: '/admin/notifications' },
 ];
 
 const TITLES: Record<string, string> = {
@@ -38,6 +42,8 @@ const TITLES: Record<string, string> = {
   '/admin/billing':       'Billing',
   '/admin/reports':       'Reports',
   '/admin/notifications': 'Notifications',
+  '/admin/wallet-requests':     'Wallet Requests',
+  '/admin/casual-deliveries':   'Casual Deliveries',
   '/admin/banners':       'Banner Management',
   '/admin/profile':       'My Profile',
 };
@@ -60,7 +66,9 @@ export default function AdminDashboard() {
         <Route path="billing"       element={<AdminBilling />} />
         <Route path="reports"       element={<AdminReports />} />
         <Route path="notifications" element={<AdminNotifications />} />
-        <Route path="banners"       element={<AdminBanners />} />
+        <Route path="banners"           element={<AdminBanners />} />
+        <Route path="wallet-requests"    element={<AdminWalletRequests />} />
+        <Route path="casual-deliveries"  element={<AdminCasualDeliveries />} />
         <Route path="profile"       element={<AdminProfile />} />
         {/* Legacy redirect */}
         <Route path="users"         element={<Navigate to="/admin/staff" replace />} />
