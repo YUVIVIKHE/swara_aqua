@@ -89,9 +89,15 @@
   box-shadow: 0 1px 4px rgba(37,99,235,0.3);
 }
 
+/* ── Prevent white flash on load — matches theme-color ────────────── */
+body {
+  background-color: #1248b8;
+}
+
 /* ── Customer Mobile Blue Header ──────────────────────────────────── */
 .customer-mobile-header {
-  background: linear-gradient(135deg, #1e6aeb 0%, #1248b8 100%);
+  /* Start at #1248b8 (matches theme-color) → brighten toward bottom */
+  background: linear-gradient(170deg, #1248b8 0%, #1e6aeb 60%, #2979f5 100%);
   border-bottom-left-radius: 20px;
   border-bottom-right-radius: 20px;
   /* Extend background behind the status bar on all platforms */
