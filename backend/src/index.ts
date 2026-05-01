@@ -67,7 +67,11 @@ app.use('/api/casual-deliveries',  casualDeliveryRoutes);
 // ── Static files ──────────────────────────────────────────────────────────────
 // Use __dirname so paths work regardless of where Passenger sets cwd
 const appRoot = path.join(__dirname, '..');
-app.use('/uploads', express.static(path.join(appRoot, 'uploads')));
+app.use('/uploads', express.static(path.join(appRoot, 'uploads'), {
+  maxAge: '7d',
+  etag: true,
+  lastModified: true,
+}));
 // ── Serve React SPA in production ─────────────────────────────────────────────
 if (isProd) {
   const distPath = path.join(appRoot, 'public');

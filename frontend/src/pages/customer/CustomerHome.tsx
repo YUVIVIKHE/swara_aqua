@@ -25,34 +25,47 @@ const BannerCarousel = () => {
   const [current, setCurrent] = useState(0);
   const [loading, setLoading] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bannersRef = useRef<Banner[]>([]);
 
   useEffect(() => {
     api.get('/banners/active')
-      .then((res) => setBanners(res.data.banners || []))
+      .then((res) => {
+        const list: Banner[] = res.data.banners || [];
+        setBanners(list);
+        bannersRef.current = list;
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  const start = (len: number) => {
-    if (len < 2) return;
-    timerRef.current = setInterval(() => setCurrent(c => (c + 1) % len), 4000);
-  };
-
+  // Single interval — start once banners load, clear on unmount
   useEffect(() => {
-    if (banners.length > 1) start(banners.length);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [banners]);
+    if (banners.length < 2) return;
+    // Clear any existing interval before starting a new one
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCurrent(c => (c + 1) % bannersRef.current.length);
+    }, 4000);
+    return () => {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    };
+  }, [banners.length]);
 
   const go = (dir: 1 | -1) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setCurrent(c => (c + dir + banners.length) % banners.length);
-    start(banners.length);
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setCurrent(c => (c + dir + bannersRef.current.length) % bannersRef.current.length);
+    if (bannersRef.current.length > 1) {
+      timerRef.current = setInterval(() => {
+        setCurrent(c => (c + 1) % bannersRef.current.length);
+      }, 4000);
+    }
   };
 
   if (loading) return <div className="h-44 w-full rounded-3xl bg-slate-100 animate-pulse" />;
   if (banners.length === 0) return null;
 
-  const b = banners[current];
+  const safeIndex = current % banners.length;
+  const b = banners[safeIndex];
   return (
     <div className="relative w-full rounded-3xl overflow-hidden shadow-lg">
       <AnimatePresence mode="wait">
@@ -89,7 +102,7 @@ const BannerCarousel = () => {
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
             {banners.map((_, i) => (
               <button key={i} onClick={() => setCurrent(i)}
-                className={`h-1.5 rounded-full transition-all duration-300 ${i === current ? 'w-6 bg-white' : 'w-1.5 bg-white/50'}`} />
+                className={`h-1.5 rounded-full transition-all duration-300 ${i === safeIndex ? 'w-6 bg-white' : 'w-1.5 bg-white/50'}`} />
             ))}
           </div>
         </>
