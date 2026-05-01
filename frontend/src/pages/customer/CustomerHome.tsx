@@ -1,28 +1,21 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Package, Droplets, ArrowRight, Plus, MapPin,
+  Package, Droplets, ArrowRight, Plus,
   ChevronLeft, ChevronRight as ChevronRightIcon,
-  TrendingUp, CheckCircle2, Timer,
+  TrendingUp,
 } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type { TouchEvent } from 'react';
 import api, { getUploadUrl } from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useOrders } from '../../hooks/useOrders';
 import { useSSE } from '../../hooks/useSSE';
 import { useToast } from '../../components/ui/Toast';
-import { OrderStatusBadge } from '../../components/ui/OrderStatusBadge';
-import { Skeleton } from '../../components/ui/Skeleton';
 import { subscriptionApi, Subscription } from '../../api/subscription';
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };
 const fadeUp  = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } } };
-
-const StatusIcon = ({ status }: { status: string }) => {
-  if (status === 'completed' || status === 'delivered') return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-  if (status === 'cancelled') return <div className="w-4 h-4 rounded-full border-2 border-slate-300" />;
-  return <Timer className="w-4 h-4 text-amber-500" />;
-};
 
 // ── Banner Carousel (API-driven, desktop) ──────────────────────────────────────
 interface Banner { id: number; title: string | null; image_url: string; link_url: string | null; }
@@ -35,7 +28,7 @@ const BannerCarousel = () => {
 
   useEffect(() => {
     api.get('/banners/active')
-      .then(({ data }) => setBanners(data.banners || []))
+      .then((res) => setBanners(res.data.banners || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -56,25 +49,25 @@ const BannerCarousel = () => {
     start(banners.length);
   };
 
-  if (loading) return <div className="h-40 rounded-3xl bg-slate-100 animate-pulse" />;
+  if (loading) return <div className="h-44 w-full rounded-3xl bg-slate-100 animate-pulse" />;
   if (banners.length === 0) return null;
 
   const b = banners[current];
   return (
-    <div className="relative rounded-3xl overflow-hidden shadow-lg">
+    <div className="relative w-full rounded-3xl overflow-hidden shadow-lg">
       <AnimatePresence mode="wait">
-        <motion.div key={b.id}
+        <motion.div key={b.id} className="w-full"
           initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }}>
           {b.link_url ? (
-            <a href={b.link_url} target="_blank" rel="noopener noreferrer">
+            <a href={b.link_url} target="_blank" rel="noopener noreferrer" className="block w-full">
               <img src={getUploadUrl(b.image_url)} alt={b.title || 'Banner'}
-                className="w-full h-40 sm:h-48 object-cover"
+                className="w-full h-44 sm:h-52 object-cover block"
                 onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x300/e2e8f0/94a3b8?text=Banner'; }} />
             </a>
           ) : (
             <img src={getUploadUrl(b.image_url)} alt={b.title || 'Banner'}
-              className="w-full h-40 sm:h-48 object-cover"
+              className="w-full h-44 sm:h-52 object-cover block"
               onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/800x300/e2e8f0/94a3b8?text=Banner'; }} />
           )}
           {b.title && (
@@ -159,12 +152,12 @@ const PromoCarousel = () => {
   }, [resetTimer]);
 
   // Touch handling for manual swipe
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = (e: TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = (e: TouchEvent) => {
     const diff = touchStartX.current - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 40) {
       const next = diff > 0
@@ -227,23 +220,18 @@ export const CustomerHome = ({ onOrderPress }: { onOrderPress?: () => void }) =>
   const { user }  = useAuth();
   const navigate  = useNavigate();
   const { toast } = useToast();
-  const { orders, loading, refresh } = useOrders();
-  const isActive  = user?.status === 'active';
-  const recent    = orders.slice(0, 3);
+  const { refresh } = useOrders();
 
   // Active plan
   const [plan, setPlan] = useState<Subscription | null>(null);
   useEffect(() => {
-    subscriptionApi.getMy().then(({ data }) => setPlan(data.subscription)).catch(() => {});
+    subscriptionApi.getMy().then((res) => setPlan(res.data.subscription)).catch(() => {});
   }, []);
 
   // SSE: auto-refresh when order status changes
   useSSE({
     order_status_changed: () => { refresh(); toast('Order status updated!', 'success'); },
   });
-
-  const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'delivered').length;
-  const pendingOrders   = orders.filter(o => o.status === 'pending' || o.status === 'assigned' || o.status === 'out_for_delivery').length;
 
   const handleOrder = () => {
     if (onOrderPress) onOrderPress(); else navigate('/customer/orders?new=1');
