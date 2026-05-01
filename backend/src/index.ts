@@ -102,7 +102,16 @@ if (isProd) {
 
 // ── Health check ──────────────────────────────────────────────────────────────
 import { getClientCount } from './services/sse.service';
-app.get('/health', (_req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV, sseClients: getClientCount() }));
+app.get('/health', (_req, res) => res.json({
+  status: 'ok',
+  env: process.env.NODE_ENV,
+  sseClients: getClientCount(),
+  cwd: process.cwd(),
+  homedir: os.homedir(),
+  uploadsDir,
+  uploadsDirExists: require('fs').existsSync(uploadsDir),
+  uploadsDirFiles: (() => { try { return require('fs').readdirSync(uploadsDir); } catch { return []; } })(),
+}));
 
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
