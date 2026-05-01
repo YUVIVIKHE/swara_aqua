@@ -1,7 +1,12 @@
 // Generates a loud notification "ding" using the Web Audio API
-export const playNotificationSound = () => {
+export const playNotificationSound = async () => {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+    // Resume context if suspended (required by browser autoplay policy)
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
 
     const play = (freq: number, startTime: number, duration: number, volume: number) => {
       const osc  = ctx.createOscillator();

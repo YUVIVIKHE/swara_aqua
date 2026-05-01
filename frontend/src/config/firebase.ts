@@ -1,5 +1,4 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAnalytics } from 'firebase/analytics';
 import { getMessaging, isSupported } from 'firebase/messaging';
 
 const firebaseConfig = {
@@ -13,8 +12,6 @@ const firebaseConfig = {
 };
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-
-export const analytics = getAnalytics(app);
 
 export const getFirebaseMessaging = async () => {
   const supported = await isSupported();
