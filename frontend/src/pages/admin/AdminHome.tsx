@@ -72,9 +72,9 @@ export const AdminHome = () => {
 
   // SSE: auto-refresh dashboard when orders change
   useSSE({
-    order_created:  () => { loadStats(); toast('New order received', 'success'); },
-    order_updated:  () => { loadStats(); },
-    delivery_completed: () => { loadStats(); },
+    order_created:      () => loadStats(),
+    order_updated:      () => loadStats(),
+    delivery_completed: () => loadStats(),
   });
 
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });

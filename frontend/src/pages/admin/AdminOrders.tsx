@@ -65,9 +65,9 @@ export const AdminOrders = () => {
 
   // SSE: auto-refresh when orders change
   useSSE({
-    order_created:      () => { load(); toast('New order received', 'success'); },
-    order_updated:      () => { load(); },
-    delivery_completed: () => { load(); },
+    order_created:      () => load(),
+    order_updated:      () => load(),
+    delivery_completed: () => load(),
   });
 
   // Cancel requests

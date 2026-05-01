@@ -228,9 +228,9 @@ export const CustomerHome = ({ onOrderPress }: { onOrderPress?: () => void }) =>
     subscriptionApi.getMy().then((res) => setPlan(res.data.subscription)).catch(() => {});
   }, []);
 
-  // SSE: auto-refresh when order status changes
+  // Poll: auto-refresh when order status changes
   useSSE({
-    order_status_changed: () => { refresh(); toast('Order status updated!', 'success'); },
+    order_status_changed: () => refresh(),
   });
 
   const handleOrder = () => {

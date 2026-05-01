@@ -50,10 +50,10 @@ export const StaffDeliveries = () => {
 
   // SSE: auto-refresh when staff gets new assignments or orders change
   useSSE({
-    order_assigned:     () => { load(); toast('New delivery assigned!', 'success'); },
-    order_created:      () => { load(); },
-    order_updated:      () => { load(); },
-    delivery_completed: () => { load(); },
+    order_assigned:     () => load(),
+    order_created:      () => load(),
+    order_updated:      () => load(),
+    delivery_completed: () => load(),
   });
 
   const openOrder = (order: Order) => {

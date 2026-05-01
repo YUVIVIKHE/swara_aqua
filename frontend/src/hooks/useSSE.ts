@@ -1,92 +1,36 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 
 type SSEHandler = (data: any) => void;
 
+// Poll interval in ms — 15s is a good balance of freshness vs server load
+const POLL_INTERVAL = 15_000;
+
 /**
- * Custom hook to subscribe to Server-Sent Events.
+ * Polling-based replacement for SSE.
  *
- * Usage:
+ * Hostinger's reverse proxy kills long-lived SSE connections with 504.
+ * This hook calls all provided handlers on a fixed interval instead,
+ * which achieves the same "auto-refresh" effect without a persistent connection.
+ *
+ * Usage is identical to the old useSSE hook — no changes needed in consumers.
+ *
  *   useSSE({
  *     order_created:        () => refetchOrders(),
- *     order_status_changed: (data) => handleStatusChange(data),
+ *     order_status_changed: () => handleStatusChange(),
  *   });
- *
- * Automatically connects using the stored JWT token,
- * reconnects on disconnect with exponential backoff,
- * and cleans up on unmount.
  */
 export const useSSE = (handlers: Record<string, SSEHandler>) => {
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const retriesRef = useRef(0);
   const handlersRef = useRef(handlers);
-
-  // Keep handlers ref current without re-triggering effect
   handlersRef.current = handlers;
 
-  const connect = useCallback(() => {
-    const token = localStorage.getItem('accessToken');
-    if (!token) return;
-
-    // Close existing connection
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    // Build URL — use relative path so it works with Vite proxy in dev
-    // and directly in production
-    const baseUrl = window.location.origin;
-    const url = `${baseUrl}/api/events?token=${encodeURIComponent(token)}`;
-
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
-
-    es.onopen = () => {
-      retriesRef.current = 0; // Reset backoff on successful connect
-    };
-
-    // Listen for the connected confirmation
-    es.addEventListener('connected', () => {
-      console.log('[SSE] Connected');
-    });
-
-    // Register all event handlers
-    const eventNames = Object.keys(handlersRef.current);
-    for (const eventName of eventNames) {
-      es.addEventListener(eventName, (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data);
-          handlersRef.current[eventName]?.(data);
-        } catch (err) {
-          console.warn(`[SSE] Failed to parse "${eventName}" event:`, err);
-        }
-      });
-    }
-
-    es.onerror = () => {
-      es.close();
-      eventSourceRef.current = null;
-
-      // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
-      const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000);
-      retriesRef.current++;
-      console.log(`[SSE] Reconnecting in ${delay / 1000}s (attempt ${retriesRef.current})`);
-
-      reconnectTimerRef.current = setTimeout(connect, delay);
-    };
-  }, []);
-
   useEffect(() => {
-    connect();
+    const timer = setInterval(() => {
+      // Call every handler with no data — consumers only use them as refresh triggers
+      for (const fn of Object.values(handlersRef.current)) {
+        try { fn({}); } catch {}
+      }
+    }, POLL_INTERVAL);
 
-    return () => {
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-      }
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
-  }, [connect]);
+    return () => clearInterval(timer);
+  }, []);
 };
