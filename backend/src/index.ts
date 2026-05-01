@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import path from 'path';
+import os from 'os';
 import dotenv from 'dotenv';
 
 // Load .env relative to this file's location, not process.cwd()
@@ -67,7 +68,13 @@ app.use('/api/casual-deliveries',  casualDeliveryRoutes);
 // ── Static files ──────────────────────────────────────────────────────────────
 // Use __dirname so paths work regardless of where Passenger sets cwd
 const appRoot = path.join(__dirname, '..');
-app.use('/uploads', express.static(path.join(appRoot, 'uploads'), {
+// In production, uploads live in ~/uploads/ (outside app dir, survives redeployments)
+// In dev, uploads live in backend/uploads/
+const uploadsDir = isProd
+  ? path.join(os.homedir(), 'uploads')
+  : path.join(appRoot, 'uploads');
+
+app.use('/uploads', express.static(uploadsDir, {
   maxAge: '7d',
   etag: true,
   lastModified: true,

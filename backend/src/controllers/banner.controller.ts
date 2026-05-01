@@ -1,13 +1,19 @@
 import { Response } from 'express';
 import multer from 'multer';
 import path from 'path';
+import os from 'os';
 import fs from 'fs';
 import pool from '../config/db';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 // ── Multer storage ─────────────────────────────────────────────────────────
-// Use __dirname-based path so it works regardless of where Node is started from
-const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'banners');
+// Store uploads in ~/uploads/banners — outside the app directory so they
+// survive git pulls and redeployments on Hostinger
+const isProdEnv = process.env.NODE_ENV === 'production';
+const uploadDir = isProdEnv
+  ? path.join(os.homedir(), 'uploads', 'banners')
+  : path.join(__dirname, '..', '..', 'uploads', 'banners');
+
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
