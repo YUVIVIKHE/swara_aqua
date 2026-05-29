@@ -65,7 +65,7 @@ JWT_SECRET=change_this_to_random_string_min_32_chars
 JWT_EXPIRES_IN=15m
 JWT_REFRESH_SECRET=change_this_to_another_random_string
 JWT_REFRESH_EXPIRES_IN=7d
-FRONTEND_URL=https://swaraaqua.labxco.in
+FRONTEND_URL=https://swaraaqua.labxco.in,https://wheat-woodpecker-720684.hostingersite.com
 # Firebase: use JSON file (upload backend/config/firebase-service-account.json via File Manager)
 FIREBASE_SERVICE_ACCOUNT_PATH=config/firebase-service-account.json
 RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxxxx

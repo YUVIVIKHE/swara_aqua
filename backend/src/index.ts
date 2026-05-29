@@ -39,12 +39,24 @@ app.use(compression());
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
   .split(',')
-  .map(o => o.trim());
+  .map(o => o.trim())
+  .filter(Boolean);
+
+const isAllowedOrigin = (origin: string | undefined): boolean => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  // Hostinger preview / temp domains + production domain variants
+  if (/^https:\/\/([a-z0-9-]+\.)*hostingersite\.com$/i.test(origin)) return true;
+  if (/^https:\/\/([a-z0-9-]+\.)*labxco\.in$/i.test(origin)) return true;
+  if (isProd && /^https:\/\/localhost(:\d+)?$/i.test(origin)) return true;
+  return false;
+};
 
 app.use(cors({
-  origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS: ${origin} not allowed`));
+  origin: (origin, cb) => {
+    if (isAllowedOrigin(origin)) return cb(null, true);
+    console.warn(`[CORS] Blocked origin: ${origin}`);
+    cb(null, false);
   },
   credentials: true,
 }));

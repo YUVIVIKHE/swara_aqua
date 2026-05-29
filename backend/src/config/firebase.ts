@@ -1,23 +1,42 @@
 import admin from 'firebase-admin';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 // dotenv already loaded in index.ts before this import
 
-const resolveServiceAccountPath = (): string | null => {
+const candidateJsonPaths = (): string[] => {
   const fromEnv =
     process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
     process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
   const backendRoot = path.join(__dirname, '..', '..');
+  const cwd = process.cwd();
+  const home = os.homedir();
+
+  const paths: string[] = [];
 
   if (fromEnv) {
-    return path.isAbsolute(fromEnv)
-      ? fromEnv
-      : path.join(backendRoot, fromEnv);
+    paths.push(path.isAbsolute(fromEnv) ? fromEnv : path.join(backendRoot, fromEnv));
+    paths.push(path.isAbsolute(fromEnv) ? fromEnv : path.join(cwd, fromEnv));
   }
 
-  const defaultPath = path.join(backendRoot, 'config', 'firebase-service-account.json');
-  return fs.existsSync(defaultPath) ? defaultPath : null;
+  paths.push(
+    path.join(backendRoot, 'config', 'firebase-service-account.json'),
+    path.join(cwd, 'config', 'firebase-service-account.json'),
+    path.join(cwd, 'firebase-service-account.json'),
+    path.join(home, 'firebase-service-account.json'),
+    path.join(home, 'config', 'firebase-service-account.json'),
+  );
+
+  return [...new Set(paths)];
+};
+
+const resolveServiceAccountPath = (): string | null => {
+  for (const p of candidateJsonPaths()) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 };
 
 const loadFromJsonFile = (filePath: string): admin.ServiceAccount | null => {
@@ -49,7 +68,12 @@ const loadFromEnv = (): admin.ServiceAccount | null => {
     ? rawKey.replace(/\\n/g, '\n')
     : rawKey;
 
-  if (!privateKey || !process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL) {
+  if (
+    !privateKey ||
+    privateKey.includes('YOUR_') ||
+    !process.env.FIREBASE_PROJECT_ID ||
+    !process.env.FIREBASE_CLIENT_EMAIL
+  ) {
     return null;
   }
 
@@ -64,20 +88,26 @@ const loadFromEnv = (): admin.ServiceAccount | null => {
 if (!admin.apps.length) {
   try {
     const jsonPath = resolveServiceAccountPath();
-    const creds = jsonPath ? loadFromJsonFile(jsonPath) : loadFromEnv();
+    let creds = jsonPath ? loadFromJsonFile(jsonPath) : null;
 
     if (!creds) {
+      creds = loadFromEnv();
+    }
+
+    if (!creds) {
+      const tried = candidateJsonPaths().slice(0, 4).join('\n   ');
       console.warn(
         '⚠️ Firebase not configured — push notifications disabled.\n' +
-        '   Hostinger: upload firebase-service-account.json to backend/config/ and set\n' +
-        '   FIREBASE_SERVICE_ACCOUNT_PATH=config/firebase-service-account.json (under 255 chars).\n' +
-        '   Or paste the full key in backend/.env via File Manager (not hPanel env UI).'
+        '   Upload firebase-service-account.json to:\n' +
+        `   ${path.join(__dirname, '..', '..', 'config', 'firebase-service-account.json')}\n` +
+        '   Or add FIREBASE_PRIVATE_KEY to backend/.env via File Manager.\n' +
+        `   Checked:\n   ${tried}`
       );
     } else {
       admin.initializeApp({ credential: admin.credential.cert(creds) });
       console.log(
         '✅ Firebase Admin initialized',
-        jsonPath ? `(from ${path.basename(jsonPath)})` : '(from env vars)'
+        jsonPath ? `(from ${jsonPath})` : '(from env vars)'
       );
     }
   } catch (error) {
