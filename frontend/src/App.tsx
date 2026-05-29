@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { ToastProvider } from './components/ui/Toast';
 import ProtectedRoute from './components/ProtectedRoute';
 import { OfflineIndicator } from './components/PWAInstall';
@@ -25,6 +26,7 @@ const PageLoader = () => (
 
 const App = () => (
   <AuthProvider>
+    <NotificationProvider>
     <ToastProvider>
       <OfflineIndicator />
       <Suspense fallback={<PageLoader />}>
@@ -45,6 +47,7 @@ const App = () => (
         </Routes>
       </Suspense>
     </ToastProvider>
+    </NotificationProvider>
   </AuthProvider>
 );
 

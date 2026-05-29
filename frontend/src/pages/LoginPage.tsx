@@ -5,6 +5,7 @@ import { Phone, Lock, Droplets, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
+import { InstallAppButton } from '../components/PWAInstall';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
@@ -128,6 +129,10 @@ export default function LoginPage() {
               Sign In
             </Button>
           </form>
+
+          <div className="mt-6 pt-6 border-t border-slate-100">
+            <InstallAppButton />
+          </div>
 
           <p className="text-center text-sm text-slate-500 mt-6">
             Don't have an account?{' '}

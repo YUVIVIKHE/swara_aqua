@@ -1,22 +1,23 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, Search, ChevronDown, LogOut, User, CheckCheck, Wallet, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useNotifications } from '../../hooks/useNotifications';
+import { useNotificationCenter } from '../../context/NotificationContext';
 import api from '../../api/axios';
-import { playNotificationSound } from '../../utils/notificationSound';
 import { addressApi, type UserAddress } from '../../api/address';
-
-interface Notification {
-  id: number; title: string; body: string;
-  type: string; is_read: number; created_at: string;
-}
 
 export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress?: () => void }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const { unregisterToken } = useNotifications(user?.id);
+  const {
+    notifications,
+    unreadCount,
+    refresh,
+    markRead,
+    markAllRead,
+    unregisterPush,
+  } = useNotificationCenter();
   const isCustomer = user?.role === 'customer';
 
   // Derive profile path from user role
@@ -28,8 +29,6 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [defaultAddress, setDefaultAddress] = useState<UserAddress | null>(null);
 
@@ -45,25 +44,6 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const { data } = await api.get('/notifications');
-      setNotifications(data.notifications);
-      // Play sound if new unread notifications arrived
-      if (data.unreadCount > unreadCount) {
-        playNotificationSound();
-      }
-      setUnreadCount(data.unreadCount);
-    } catch { }
-  }, [unreadCount]);
-
-  useEffect(() => {
-    fetchNotifications();
-    // Poll every 30s for new notifications
-    const interval = setInterval(fetchNotifications, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
 
   // Fetch wallet balance for customers
   useEffect(() => {
@@ -84,20 +64,8 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
     }
   }, [isCustomer]);
 
-  const handleMarkRead = async (id: number) => {
-    await api.patch(`/notifications/${id}/read`);
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
-    setUnreadCount(prev => Math.max(0, prev - 1));
-  };
-
-  const handleMarkAllRead = async () => {
-    await api.patch('/notifications/read-all');
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-    setUnreadCount(0);
-  };
-
   const handleLogout = async () => {
-    await unregisterToken();
+    await unregisterPush();
     logout();
   };
 
@@ -119,7 +87,7 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
             <p className="text-sm font-bold text-slate-800">Notifications</p>
             {unreadCount > 0 && (
-              <button onClick={handleMarkAllRead}
+              <button onClick={markAllRead}
                 className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-semibold transition-colors">
                 <CheckCheck className="w-3.5 h-3.5" /> Mark all read
               </button>
@@ -136,7 +104,7 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
               notifications.map(n => (
                 <div key={n.id}
                   className={`flex items-start gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer ${!n.is_read ? 'bg-brand-50/40' : ''}`}
-                  onClick={() => !n.is_read && handleMarkRead(n.id)}
+                  onClick={() => !n.is_read && markRead(n.id)}
                 >
                   <span className="text-lg shrink-0 mt-0.5">{typeIcon[n.type] || '🔔'}</span>
                   <div className="flex-1 min-w-0">
@@ -213,7 +181,7 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
                 <h2 className="text-2xl font-extrabold text-white italic">Order Jar</h2>
                 <div className="flex items-center gap-1 shrink-0">
                   <div className="relative" ref={bellRef}>
-                    <button onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) fetchNotifications(); }}
+                    <button onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) refresh(); }}
                       className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors">
                       <Bell className="w-5 h-5 text-white" />
                       {unreadCount > 0 && (
@@ -280,7 +248,7 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
 
               <div className="flex items-center gap-1 shrink-0">
                 <div className="relative" ref={bellRef}>
-                  <button onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) fetchNotifications(); }}
+                  <button onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) refresh(); }}
                     className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors">
                     <Bell className="w-5 h-5 text-white" />
                     {unreadCount > 0 && (
@@ -318,7 +286,7 @@ export const TopNavbar = ({ title, onOrderPress }: { title: string; onOrderPress
 
           {/* Notification Bell */}
           <div className="relative" ref={isCustomer ? undefined : bellRef}>
-            <button onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) fetchNotifications(); }}
+            <button onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) refresh(); }}
               className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors">
               <Bell className="w-4.5 h-4.5 text-slate-500" />
               {unreadCount > 0 && (

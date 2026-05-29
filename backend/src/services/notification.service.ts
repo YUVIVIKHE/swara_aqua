@@ -1,6 +1,7 @@
 import admin from '../config/firebase';
 import pool from '../config/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import * as SSE from './sse.service';
 
 export interface SendPayload {
   userId: number;
@@ -139,7 +140,12 @@ const buildMessage = (token: string, payload: SendPayload): admin.messaging.Mess
       },
     },
   },
-  data: { type: payload.type, ...(payload.data || {}) },
+  data: {
+    title: payload.title,
+    body:  payload.body,
+    type:  payload.type,
+    ...(payload.data || {}),
+  },
 });
 
 /**
@@ -148,8 +154,16 @@ const buildMessage = (token: string, payload: SendPayload): admin.messaging.Mess
 export const sendToUser = async (payload: SendPayload): Promise<void> => {
   const tokens = await getTokensByUserId(payload.userId);
 
-  // Always save to notification history regardless of FCM
-  await saveNotification(payload);
+  const notifId = await saveNotification(payload);
+
+  // Real-time in-app delivery (SSE)
+  SSE.sendToUser(payload.userId, 'notification', {
+    id: notifId,
+    title: payload.title,
+    body: payload.body,
+    type: payload.type,
+    data: payload.data || {},
+  });
 
   if (!tokens.length) return;
 
@@ -199,6 +213,8 @@ export const sendToRole = async (
     }
   } catch {}
 
+  SSE.broadcastToRole(role, 'notification', { title, body, type, data: data || {} });
+
   if (!tokens.length) return;
 
   // FCM best-effort
@@ -220,7 +236,7 @@ export const sendToRole = async (
         priority: 'high',
         notification: { title, body, sound: 'default', channelId: 'swara_aqua_default', priority: 'high' },
       },
-      data: { type, ...(data || {}) },
+      data: { title, body, type, ...(data || {}) },
     };
 
     const response = await admin.messaging().sendEachForMulticast(message);

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Smartphone, Download, WifiOff, X, Share } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -6,62 +7,172 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-export const PWAInstallBanner = () => {
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches
+  || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+const isIosDevice = () =>
+  /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window as Window & { MSStream?: unknown }).MSStream;
+
+/** Hook for PWA install prompt (Chrome/Edge) and iOS detection. */
+export const usePwaInstall = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [show, setShow]           = useState(false);
-  const [isIOS, setIsIOS]         = useState(false);
-  const [isInstalled, setInstalled] = useState(false);
+  const [isInstalled, setInstalled] = useState(isStandalone);
+  const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
-    // Already running as installed PWA — hide everything
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    setIsIOS(isIosDevice());
+    if (isStandalone()) {
       setInstalled(true);
       return;
     }
 
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window as any).MSStream;
-    setIsIOS(ios);
-
-    // Capture the browser's native install prompt (Android/Chrome)
-    const handler = (e: Event) => {
+    const onPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      // Show banner once prompt is captured
-      const dismissed = sessionStorage.getItem('pwa-banner-dismissed');
-      if (!dismissed) setShow(true);
     };
 
-    window.addEventListener('beforeinstallprompt', handler);
+    const onInstalled = () => {
+      setInstalled(true);
+      setDeferredPrompt(null);
+    };
 
-    // iOS: show instructions after 4s if not dismissed
-    if (ios) {
-      const dismissed = sessionStorage.getItem('pwa-banner-dismissed');
-      if (!dismissed) {
-        const t = setTimeout(() => setShow(true), 4000);
-        return () => { window.removeEventListener('beforeinstallprompt', handler); clearTimeout(t); };
-      }
-    }
-
-    // Listen for the app being successfully installed
-    window.addEventListener('appinstalled', () => { setInstalled(true); setShow(false); });
-
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
   }, []);
 
-  const handleInstall = useCallback(async () => {
-    if (!deferredPrompt) return;
+  const install = useCallback(async () => {
+    if (!deferredPrompt) return false;
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstalled(true);
-      setShow(false);
-    }
+    if (outcome === 'accepted') setInstalled(true);
     setDeferredPrompt(null);
+    return outcome === 'accepted';
   }, [deferredPrompt]);
+
+  return {
+    isInstalled,
+    isIOS,
+    canNativeInstall: !!deferredPrompt && !isInstalled,
+    install,
+  };
+};
+
+/** iOS install steps modal */
+const IosInstallHelp = ({ onClose }: { onClose: () => void }) => (
+  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" onClick={onClose}>
+    <div
+      className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-bold text-slate-900">Install on iPhone / iPad</p>
+        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      <ol className="space-y-3 text-sm text-slate-600">
+        <li className="flex gap-3">
+          <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0">1</span>
+          <span>Tap the <strong>Share</strong> button <Share className="inline w-4 h-4 text-brand-600 align-text-bottom" /> in Safari</span>
+        </li>
+        <li className="flex gap-3">
+          <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+          <span>Scroll and tap <strong>Add to Home Screen</strong></span>
+        </li>
+        <li className="flex gap-3">
+          <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0">3</span>
+          <span>Tap <strong>Add</strong> — Swara Aqua appears on your home screen</span>
+        </li>
+      </ol>
+      <Link
+        to="/download"
+        onClick={onClose}
+        className="mt-4 block text-center text-xs text-brand-600 font-semibold hover:text-brand-700"
+      >
+        View full install guide →
+      </Link>
+    </div>
+  </div>
+);
+
+/** Install button for login / signup pages */
+export const InstallAppButton = ({ className = '' }: { className?: string }) => {
+  const { isInstalled, isIOS, canNativeInstall, install } = usePwaInstall();
+  const [iosHelp, setIosHelp] = useState(false);
+  const [installing, setInstalling] = useState(false);
+
+  if (isInstalled) return null;
+
+  const handleClick = async () => {
+    if (canNativeInstall) {
+      setInstalling(true);
+      try {
+        await install();
+      } finally {
+        setInstalling(false);
+      }
+      return;
+    }
+    if (isIOS) {
+      setIosHelp(true);
+      return;
+    }
+    window.location.href = '/download';
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={installing}
+        className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-brand-200 bg-gradient-to-r from-brand-50 to-aqua-50 text-brand-700 text-sm font-bold hover:from-brand-100 hover:to-aqua-100 hover:border-brand-300 active:scale-[0.98] transition-all disabled:opacity-60 ${className}`}
+      >
+        <Download className="w-4 h-4 shrink-0" />
+        {installing ? 'Installing…' : 'Install Swara Aqua App'}
+      </button>
+      <p className="text-center text-[11px] text-slate-400 mt-2">
+        Free · No app store · Works offline after install
+      </p>
+      {iosHelp && <IosInstallHelp onClose={() => setIosHelp(false)} />}
+    </>
+  );
+};
+
+export const PWAInstallBanner = () => {
+  const { isInstalled, isIOS, canNativeInstall, install } = usePwaInstall();
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (isInstalled) return;
+
+    const dismissed = sessionStorage.getItem('pwa-banner-dismissed');
+    if (dismissed) return;
+
+    if (canNativeInstall) {
+      setShow(true);
+      return;
+    }
+
+    if (isIOS) {
+      const t = setTimeout(() => setShow(true), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [isInstalled, isIOS, canNativeInstall]);
 
   const dismiss = () => {
     setShow(false);
     sessionStorage.setItem('pwa-banner-dismissed', '1');
+  };
+
+  const handleInstall = async () => {
+    await install();
+    setShow(false);
   };
 
   if (isInstalled || !show) return null;
@@ -69,12 +180,10 @@ export const PWAInstallBanner = () => {
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 max-w-sm mx-auto animate-in slide-in-from-bottom-4">
       <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 flex items-start gap-3">
-        {/* Icon */}
         <div className="w-11 h-11 bg-gradient-to-br from-brand-500 to-aqua-500 rounded-xl flex items-center justify-center shrink-0 shadow-sm">
           <Smartphone className="w-5 h-5 text-white" />
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-slate-900">Install Swara Aqua</p>
           {isIOS ? (
@@ -87,7 +196,7 @@ export const PWAInstallBanner = () => {
               Add to your home screen for the best experience
             </p>
           )}
-          {!isIOS && deferredPrompt && (
+          {canNativeInstall && (
             <button
               onClick={handleInstall}
               className="flex items-center gap-1.5 mt-2 bg-gradient-to-r from-brand-600 to-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm hover:shadow-brand transition-all"
@@ -98,7 +207,6 @@ export const PWAInstallBanner = () => {
           )}
         </div>
 
-        {/* Dismiss */}
         <button
           onClick={dismiss}
           className="text-slate-300 hover:text-slate-500 transition-colors shrink-0 mt-0.5"

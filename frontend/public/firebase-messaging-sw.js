@@ -1,4 +1,9 @@
 // Firebase Cloud Messaging Service Worker
+// Minimal fetch handler so the app meets PWA install criteria (Chrome / Edge).
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
+});
+
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
@@ -16,8 +21,8 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log('[SW] Background message:', payload);
 
-  const title   = payload.notification?.title || payload.data?.title || 'New Notification';
-  const body    = payload.notification?.body  || payload.data?.body  || '';
+  const title   = payload.notification?.title || payload.data?.title || 'Swara Aqua';
+  const body    = payload.notification?.body  || payload.data?.body  || 'You have a new update';
   const type    = payload.data?.type || 'general';
   const orderId = payload.data?.orderId || '';
 

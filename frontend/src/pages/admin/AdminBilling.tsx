@@ -6,6 +6,7 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { billingApi, Bill, DeliveryReport } from '../../api/billing';
 import api from '../../api/axios';
+import { eachDateInRange } from '../../utils/date';
 
 const STATUS_STYLE: Record<string, string> = {
   paid:    'bg-green-50 text-green-700 border-green-200',
@@ -62,7 +63,13 @@ export const AdminBilling = () => {
     setGenerating(true);
     try {
       const { data } = await billingApi.generate(genMonth);
-      toast(`Generated: ${data.generated}, Skipped: ${data.skipped}`, 'success');
+      const recalc = data.recalculated ?? 0;
+      toast(
+        recalc > 0
+          ? `Generated: ${data.generated}, Updated: ${recalc}, Skipped: ${data.skipped}`
+          : `Generated: ${data.generated}, Skipped: ${data.skipped}`,
+        'success'
+      );
       await load();
     } catch (err: any) {
       toast(err?.response?.data?.message || 'Generation failed', 'error');
@@ -180,14 +187,11 @@ export const AdminBilling = () => {
               </div>
             </div>
             {(() => {
-              const start = new Date(report.startDate + 'T00:00:00');
-              const end   = new Date(report.endDate   + 'T00:00:00');
               const jarMap = new Map(report.days.map(d => [d.date, d.jars]));
-              const allDates: { date: string; jars: number }[] = [];
-              for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const iso = d.toISOString().split('T')[0];
-                allDates.push({ date: iso, jars: jarMap.get(iso) ?? 0 });
-              }
+              const allDates = eachDateInRange(report.startDate, report.endDate).map(date => ({
+                date,
+                jars: jarMap.get(date) ?? 0,
+              }));
               return (
                 <div className="grid gap-1 max-h-48 overflow-y-auto"
                   style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(40px, 1fr))' }}>

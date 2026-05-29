@@ -377,6 +377,15 @@ export const runMigrations = async (): Promise<void> => {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
 
+    // Backfill delivered_at for completed deliveries (needed for monthly billing)
+    const [backfill] = await conn.query<any>(
+      `UPDATE deliveries SET delivered_at = created_at
+       WHERE status = 'delivered' AND delivered_at IS NULL`
+    );
+    if (backfill.affectedRows > 0) {
+      console.log(`  ✅ Backfilled delivered_at on ${backfill.affectedRows} delivery rows`);
+    }
+
     console.log('✅ Migrations complete');  } catch (err) {
     console.error('❌ Migration error:', (err as Error).message);
     // Don't crash the server — log and continue

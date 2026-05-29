@@ -144,6 +144,19 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
 
     // SSE: notify admin + all staff of new order
     SSE.broadcastToRoles(['admin', 'staff'], 'order_created', { orderId, quantity, customerId: req.user!.id });
+    SSE.sendToUser(req.user!.id, 'order_created', { orderId, quantity, status: 'assigned' });
+
+    notify(() =>
+      NotifService.sendToUser({
+        userId: req.user!.id,
+        title:  scheduledForTomorrow ? 'Order Scheduled 📅' : 'Order Placed ✅',
+        body:   scheduledForTomorrow
+          ? `Your ${quantity} jar order is scheduled for tomorrow.`
+          : `Your order for ${quantity} jars has been placed and assigned.`,
+        type:   'order',
+        data:   { orderId: String(orderId) },
+      })
+    );
 
     const msg = scheduledForTomorrow
       ? 'Order scheduled for tomorrow (outside booking hours)'

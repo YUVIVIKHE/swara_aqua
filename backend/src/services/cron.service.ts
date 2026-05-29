@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { generateMonthlyBills } from '../models/billing.model';
-import { getBills } from '../models/billing.model';
+import { previousMonthKey } from '../utils/date';
 import * as NotifService from './notification.service';
 import pool from '../config/db';
 import { RowDataPacket } from 'mysql2/promise';
@@ -22,9 +22,8 @@ export const startCronJobs = () => {
 
   // ── Auto-generate bills on 1st of every month at 00:05 ───────────────────
   cron.schedule('5 0 1 * *', async () => {
-    const now   = new Date();
-    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    console.log(`[CRON] Generating bills for ${month}…`);
+    const month = previousMonthKey();
+    console.log(`[CRON] Generating bills for ${month} (previous month)…`);
     try {
       const result = await generateMonthlyBills(month);
       console.log(`[CRON] Bills: generated=${result.generated} skipped=${result.skipped} errors=${result.errors}`);

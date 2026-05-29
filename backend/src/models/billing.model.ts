@@ -1,6 +1,48 @@
 import pool from '../config/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 
+/** Delivered jars for a customer in YYYY-MM (uses delivered_at, falls back to created_at). */
+const countDeliveredJarsForMonth = async (
+  conn: Awaited<ReturnType<typeof pool.getConnection>>,
+  customerId: number,
+  month: string
+): Promise<number> => {
+  const [jarRows] = await conn.query<RowDataPacket[]>(
+    `SELECT COALESCE(SUM(d.delivered_quantity), 0) AS total_jars
+     FROM deliveries d
+     JOIN orders o ON o.id = d.order_id
+     WHERE o.customer_id = ?
+       AND DATE_FORMAT(COALESCE(d.delivered_at, d.created_at), '%Y-%m') = ?
+       AND d.status = 'delivered'`,
+    [customerId, month]
+  );
+  return Number((jarRows as RowDataPacket[])[0].total_jars);
+};
+
+const previousPendingForMonth = async (
+  conn: Awaited<ReturnType<typeof pool.getConnection>>,
+  customerId: number,
+  month: string
+): Promise<number> => {
+  const [pendRows] = await conn.query<RowDataPacket[]>(
+    `SELECT COALESCE(SUM(total_amount - paid_amount), 0) AS pending
+     FROM bills
+     WHERE customer_id = ? AND status IN ('unpaid','partial') AND month < ?`,
+    [customerId, month]
+  );
+  return Number((pendRows as RowDataPacket[])[0].pending);
+};
+
+const billStatusFromAmounts = (
+  totalAmount: number,
+  paidAmount: number
+): Bill['status'] => {
+  const remaining = parseFloat((totalAmount - paidAmount).toFixed(2));
+  if (remaining <= 0) return 'paid';
+  if (paidAmount > 0) return 'partial';
+  return 'unpaid';
+};
+
 export interface Bill {
   id: number;
   customer_id: number;
@@ -19,6 +61,56 @@ export interface Bill {
   customer_phone?: string;
 }
 
+// ── Recalculate an existing bill from current delivery data ───────────────────
+export const recalculateBillForCustomer = async (
+  customerId: number,
+  month: string,
+  billId: number
+): Promise<Bill | null> => {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [billRows] = await conn.query<RowDataPacket[]>(
+      'SELECT * FROM bills WHERE id = ? AND customer_id = ? AND month = ? FOR UPDATE',
+      [billId, customerId, month]
+    );
+    if (!(billRows as RowDataPacket[]).length) {
+      await conn.rollback();
+      return null;
+    }
+    const existing = (billRows as RowDataPacket[])[0];
+
+    const totalJars = await countDeliveredJarsForMonth(conn, customerId, month);
+    const previousPending = await previousPendingForMonth(conn, customerId, month);
+
+    const jarRate = Number(existing.jar_rate);
+    const subtotal = parseFloat((totalJars * jarRate).toFixed(2));
+    const advanceUsed = Number(existing.advance_used);
+    const paidAmount = Number(existing.paid_amount);
+    let totalAmount = parseFloat((subtotal + previousPending - advanceUsed).toFixed(2));
+    if (totalAmount < 0) totalAmount = 0;
+
+    const status = billStatusFromAmounts(totalAmount, paidAmount);
+
+    await conn.query(
+      `UPDATE bills SET total_jars = ?, subtotal = ?, previous_pending = ?,
+              total_amount = ?, status = ?
+       WHERE id = ?`,
+      [totalJars, subtotal, previousPending, totalAmount, status, billId]
+    );
+
+    await conn.commit();
+
+    return getBillById(billId);
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
 // ── Generate bill for one customer for a given month ──────────────────────────
 export const generateBillForCustomer = async (
   customerId: number,
@@ -28,18 +120,20 @@ export const generateBillForCustomer = async (
   try {
     await conn.beginTransaction();
 
-    // Prevent duplicate
     const [existing] = await conn.query<RowDataPacket[]>(
-      'SELECT id FROM bills WHERE customer_id = ? AND month = ? FOR UPDATE',
+      'SELECT id, total_jars, paid_amount FROM bills WHERE customer_id = ? AND month = ? FOR UPDATE',
       [customerId, month]
     );
     if ((existing as RowDataPacket[]).length) {
-      await conn.rollback();
-      return null; // already generated
+      const row = (existing as RowDataPacket[])[0];
+      await conn.commit();
+      // Refresh stale bills (generated before deliveries were recorded)
+      if (Number(row.total_jars) === 0 || Number(row.paid_amount) === 0) {
+        return recalculateBillForCustomer(customerId, month, row.id);
+      }
+      return null;
     }
 
-    // Customer jar_rate + advance_balance
-    // Use COALESCE to handle missing columns gracefully
     const [custRows] = await conn.query<RowDataPacket[]>(
       `SELECT id,
               COALESCE(jar_rate, 50)        AS jar_rate,
@@ -50,34 +144,15 @@ export const generateBillForCustomer = async (
     if (!(custRows as RowDataPacket[]).length) { await conn.rollback(); return null; }
     const cust = (custRows as RowDataPacket[])[0];
 
-    // Total jars delivered this month
-    const [jarRows] = await conn.query<RowDataPacket[]>(
-      `SELECT COALESCE(SUM(d.delivered_quantity), 0) AS total_jars
-       FROM deliveries d
-       JOIN orders o ON o.id = d.order_id
-       WHERE o.customer_id = ?
-         AND DATE_FORMAT(d.delivered_at, '%Y-%m') = ?
-         AND d.status = 'delivered'`,
-      [customerId, month]
-    );
-    const totalJars: number = Number((jarRows as RowDataPacket[])[0].total_jars);
-
-    // Previous pending = unpaid/partial bills total_amount - paid_amount
-    const [pendRows] = await conn.query<RowDataPacket[]>(
-      `SELECT COALESCE(SUM(total_amount - paid_amount), 0) AS pending
-       FROM bills
-       WHERE customer_id = ? AND status IN ('unpaid','partial') AND month < ?`,
-      [customerId, month]
-    );
-    const previousPending: number = Number((pendRows as RowDataPacket[])[0].pending);
+    const totalJars = await countDeliveredJarsForMonth(conn, customerId, month);
+    const previousPending = await previousPendingForMonth(conn, customerId, month);
 
     const jarRate: number   = Number(cust.jar_rate);
-    const subtotal: number  = totalJars * jarRate;
+    const subtotal: number  = parseFloat((totalJars * jarRate).toFixed(2));
     let totalAmount: number = subtotal + previousPending;
     let advanceUsed         = 0;
     let advanceBalance: number = Number(cust.advance_balance);
 
-    // Deduct advance
     if (advanceBalance > 0 && totalAmount > 0) {
       advanceUsed    = Math.min(advanceBalance, totalAmount);
       totalAmount    = parseFloat((totalAmount - advanceUsed).toFixed(2));
@@ -85,9 +160,8 @@ export const generateBillForCustomer = async (
       await conn.query('UPDATE users SET advance_balance = ? WHERE id = ?', [advanceBalance, customerId]);
     }
 
-    const status: Bill['status'] = totalAmount <= 0 ? 'paid' : 'unpaid';
+    const status: Bill['status'] = billStatusFromAmounts(totalAmount, 0);
 
-    // Due date = 10th of the NEXT month
     const [y, m] = month.split('-').map(Number);
     const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
     const dueDate = `${nextMonth}-10`;
@@ -103,12 +177,7 @@ export const generateBillForCustomer = async (
 
     await conn.commit();
 
-    const [billRows] = await pool.query<RowDataPacket[]>(
-      `SELECT b.*, u.name AS customer_name, u.phone AS customer_phone
-       FROM bills b JOIN users u ON u.id = b.customer_id WHERE b.id = ?`,
-      [result.insertId]
-    );
-    return (billRows as RowDataPacket[])[0] as Bill;
+    return getBillById(result.insertId);
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -117,9 +186,18 @@ export const generateBillForCustomer = async (
   }
 };
 
+/** Sync bills that show 0 jars but may have deliveries recorded since generation. */
+export const syncStaleBills = async (customerId: number): Promise<void> => {
+  const bills = await getBills({ customerId });
+  const stale = bills.filter(b => Number(b.total_jars) === 0);
+  for (const b of stale) {
+    await recalculateBillForCustomer(customerId, b.month, b.id);
+  }
+};
+
 // ── Generate bills for ALL customers ─────────────────────────────────────────
 export const generateMonthlyBills = async (month: string): Promise<{
-  generated: number; skipped: number; errors: number;
+  generated: number; recalculated: number; skipped: number; errors: number;
 }> => {
   const [customers] = await pool.query<RowDataPacket[]>(
     "SELECT id FROM users WHERE role = 'customer' AND status = 'active'"
@@ -127,20 +205,31 @@ export const generateMonthlyBills = async (month: string): Promise<{
 
   if (!(customers as RowDataPacket[]).length) {
     console.log('[Billing] No active customers found');
-    return { generated: 0, skipped: 0, errors: 0 };
+    return { generated: 0, recalculated: 0, skipped: 0, errors: 0 };
   }
 
-  let generated = 0, skipped = 0, errors = 0;
+  let generated = 0, recalculated = 0, skipped = 0, errors = 0;
 
   for (const c of customers as RowDataPacket[]) {
     try {
+      const [existing] = await pool.query<RowDataPacket[]>(
+        'SELECT id, total_jars, paid_amount FROM bills WHERE customer_id = ? AND month = ?',
+        [c.id, month]
+      );
+      const hadBill = (existing as RowDataPacket[]).length > 0;
+
       const bill = await generateBillForCustomer(c.id, month);
       if (bill) {
-        generated++;
-        console.log(`[Billing] Generated bill #${bill.id} for customer ${c.id} (${month})`);
+        if (hadBill) {
+          recalculated++;
+          console.log(`[Billing] Recalculated bill #${bill.id} for customer ${c.id} (${month})`);
+        } else {
+          generated++;
+          console.log(`[Billing] Generated bill #${bill.id} for customer ${c.id} (${month})`);
+        }
       } else {
         skipped++;
-        console.log(`[Billing] Skipped customer ${c.id} — bill already exists for ${month}`);
+        console.log(`[Billing] Skipped customer ${c.id} — bill already up to date for ${month}`);
       }
     } catch (err) {
       errors++;
@@ -148,8 +237,8 @@ export const generateMonthlyBills = async (month: string): Promise<{
     }
   }
 
-  console.log(`[Billing] Done — generated:${generated} skipped:${skipped} errors:${errors}`);
-  return { generated, skipped, errors };
+  console.log(`[Billing] Done — generated:${generated} recalculated:${recalculated} skipped:${skipped} errors:${errors}`);
+  return { generated, recalculated, skipped, errors };
 };
 
 // ── Queries ───────────────────────────────────────────────────────────────────

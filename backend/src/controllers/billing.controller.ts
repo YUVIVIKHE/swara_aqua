@@ -50,6 +50,10 @@ export const getBills = async (req: AuthRequest, res: Response): Promise<void> =
 
     if (req.user!.role === 'customer') filters.customerId = req.user!.id;
 
+    if (filters.customerId) {
+      await BillingModel.syncStaleBills(filters.customerId);
+    }
+
     const bills = await BillingModel.getBills(filters);
     res.json({ bills });
   } catch (err) {
@@ -202,20 +206,20 @@ const getReportData = async (customerId: number, startDate: string, endDate: str
 
   // Daily breakdown
   const [dailyRows] = await pool.query<RowDataPacket[]>(
-    `SELECT DATE(d.delivered_at) AS delivery_date,
+    `SELECT DATE_FORMAT(COALESCE(d.delivered_at, d.created_at), '%Y-%m-%d') AS delivery_date,
             SUM(d.delivered_quantity) AS jars
      FROM deliveries d
      JOIN orders o ON o.id = d.order_id
      WHERE o.customer_id = ?
-       AND DATE(d.delivered_at) BETWEEN ? AND ?
+       AND DATE(COALESCE(d.delivered_at, d.created_at)) BETWEEN ? AND ?
        AND d.status = 'delivered'
-     GROUP BY DATE(d.delivered_at)
+     GROUP BY DATE(COALESCE(d.delivered_at, d.created_at))
      ORDER BY delivery_date ASC`,
     [customerId, startDate, endDate]
   );
 
-  const days = dailyRows.map((r: any) => ({
-    date: new Date(r.delivery_date).toISOString().split('T')[0],
+  const days = dailyRows.map((r: RowDataPacket) => ({
+    date: String(r.delivery_date),
     jars: Number(r.jars),
   }));
 

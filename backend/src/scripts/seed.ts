@@ -104,9 +104,9 @@ const runSeed = async () => {
       [c4.insertId, s1.insertId, formatDt(new Date(now.getTime() - 1000 * 60 * 60 * 24 * 2))] // 2 days ago
     );
 
-    await conn.query(`INSERT INTO deliveries (order_id, staff_id, delivered_quantity, collected_amount, payment_mode, status) VALUES 
-      (?, ?, 5, 250.00, 'cash', 'delivered')`,
-      [ordComp.insertId, s1.insertId]
+    await conn.query(`INSERT INTO deliveries (order_id, staff_id, delivered_quantity, collected_amount, payment_mode, status, delivered_at) VALUES 
+      (?, ?, 5, 250.00, 'cash', 'delivered', ?)`,
+      [ordComp.insertId, s1.insertId, formatDt(new Date(now.getTime() - 1000 * 60 * 60 * 24 * 2))]
     );
 
     console.log('🧾 Seeding Bills...');

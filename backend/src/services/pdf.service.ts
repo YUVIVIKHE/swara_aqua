@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import pool from '../config/db';
 import { RowDataPacket } from 'mysql2/promise';
+import { formatLocalDate } from '../utils/date';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,13 +67,13 @@ interface DailyJar { day: number; jars: number; }
 
 const getDailyDeliveries = async (customerId: number, month: string): Promise<DailyJar[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT DAY(d.delivered_at) AS day, SUM(d.delivered_quantity) AS jars
+    `SELECT DAY(COALESCE(d.delivered_at, d.created_at)) AS day, SUM(d.delivered_quantity) AS jars
      FROM deliveries d
      JOIN orders o ON o.id = d.order_id
      WHERE o.customer_id = ?
-       AND DATE_FORMAT(d.delivered_at, '%Y-%m') = ?
+       AND DATE_FORMAT(COALESCE(d.delivered_at, d.created_at), '%Y-%m') = ?
        AND d.status = 'delivered'
-     GROUP BY DAY(d.delivered_at)
+     GROUP BY DAY(COALESCE(d.delivered_at, d.created_at))
      ORDER BY day ASC`,
     [customerId, month]
   );
@@ -531,8 +532,7 @@ export const generateReportPDF = async (data: ReportData, res: Response): Promis
   const calEnd   = new Date(data.endDate   + 'T00:00:00');
   const allDates: string[] = [];
   for (let d = new Date(calStart); d <= calEnd; d.setDate(d.getDate() + 1)) {
-    const iso = d.toISOString().split('T')[0];
-    allDates.push(iso);
+    allDates.push(formatLocalDate(d));
   }
 
   const COLS = 16;

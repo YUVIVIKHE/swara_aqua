@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/Toast';
 import { billingApi, Bill, DeliveryReport } from '../../api/billing';
 import { walletApi } from '../../api/wallet';
 import { loadRazorpay } from '../../utils/razorpay';
+import { eachDateInRange } from '../../utils/date';
 
 const STATUS_CFG: Record<string, { label: string; icon: typeof CheckCircle2; bg: string; text: string; dot: string }> = {
   paid:    { label: 'Paid',    icon: CheckCircle2, bg: 'bg-green-50 border-green-100', text: 'text-green-700', dot: 'bg-green-400' },
@@ -327,15 +328,11 @@ export const CustomerBills = () => {
 
               {/* Daily calendar grid — all dates, 0 for empty */}
               {(() => {
-                // Build full list of all dates in range
-                const start = new Date(report.startDate + 'T00:00:00');
-                const end   = new Date(report.endDate   + 'T00:00:00');
-                const allDates: { date: string; jars: number }[] = [];
                 const jarMap = new Map(report.days.map(d => [d.date, d.jars]));
-                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                  const iso = d.toISOString().split('T')[0];
-                  allDates.push({ date: iso, jars: jarMap.get(iso) ?? 0 });
-                }
+                const allDates = eachDateInRange(report.startDate, report.endDate).map(date => ({
+                  date,
+                  jars: jarMap.get(date) ?? 0,
+                }));
                 return (
                   <div className="px-5 pb-4">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">

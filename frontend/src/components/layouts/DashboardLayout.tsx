@@ -4,6 +4,7 @@ import { LucideIcon } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopNavbar } from './TopNavbar';
 import { BottomNav } from './BottomNav';
+import { NotificationEnableBanner } from '../NotificationEnableBanner';
 
 interface NavItem { label: string; icon: LucideIcon; to: string; }
 
@@ -23,6 +24,7 @@ export const DashboardLayout = ({ children, navItems, title, onOrderPress }: Pro
 
       <div className="flex flex-col flex-1 min-w-0">
         <TopNavbar title={title} onOrderPress={onOrderPress} />
+        <NotificationEnableBanner />
         <motion.main
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
