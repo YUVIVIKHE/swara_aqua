@@ -84,9 +84,10 @@ export const getUnreadCount = async (userId: number): Promise<number> => {
 
 // ── FCM helpers ───────────────────────────────────────────────────────────────
 
-const siteUrl = () => process.env.FRONTEND_URL || 'https://swaraaqua.labxco.in';
-
-const iconUrl = () => `${siteUrl()}/icons/icon-192.png`;
+const siteUrl = () => {
+  const raw = process.env.FRONTEND_URL || 'https://swaraaqua.labxco.in';
+  return raw.split(',')[0].trim();
+};
 
 const ROLE_PATHS: Record<string, Record<string, string>> = {
   admin: {
@@ -113,7 +114,7 @@ const getUserRole = async (userId: number): Promise<string> => {
 
 // ── FCM send ──────────────────────────────────────────────────────────────────
 
-/** Web push with notification payload — OS shows alert when app is closed. */
+/** Data-only FCM — service worker shows notification when app is closed/killed. */
 const buildMessage = async (
   token: string,
   payload: SendPayload,
@@ -122,54 +123,28 @@ const buildMessage = async (
   const role = await getUserRole(userId);
   const path = ROLE_PATHS[role]?.[payload.type] || ROLE_PATHS[role]?.general || '/';
   const link = siteUrl() + path;
-  const icon = iconUrl();
+
+  const data: Record<string, string> = {
+    title: payload.title,
+    body:  payload.body,
+    type:  payload.type,
+    path,
+    url:   link,
+    orderId: payload.data?.orderId || '',
+  };
+  for (const [k, v] of Object.entries(payload.data || {})) {
+    data[k] = String(v);
+  }
 
   return {
     token,
-    notification: {
-      title: payload.title,
-      body:  payload.body,
-    },
-    data: {
-      title: payload.title,
-      body:  payload.body,
-      type:  payload.type,
-      path,
-      url:   link,
-      ...(payload.data || {}),
-    },
+    data,
     webpush: {
       headers: {
         Urgency: 'high',
         TTL:     '86400',
       },
-      notification: {
-        title:              payload.title,
-        body:               payload.body,
-        icon,
-        badge:              icon,
-        silent:             true,
-        requireInteraction: false,
-      },
       fcmOptions: { link },
-    },
-    android: {
-      priority: 'high',
-      notification: {
-        title:        payload.title,
-        body:         payload.body,
-        channelId:    'swara_aqua_orders',
-        priority:     'high' as const,
-        defaultSound: false,
-      },
-    },
-    apns: {
-      payload: {
-        aps: {
-          badge: 1,
-          alert: { title: payload.title, body: payload.body },
-        },
-      },
     },
   };
 };
@@ -264,31 +239,22 @@ export const sendToRole = async (
 
   const path = ROLE_PATHS[role]?.[type] || ROLE_PATHS[role]?.general || '/';
   const link = siteUrl() + path;
-  const icon = iconUrl();
+
+  const dataPayload: Record<string, string> = {
+    title, body, type, path, url: link, orderId: data?.orderId || '',
+  };
+  for (const [k, v] of Object.entries(data || {})) {
+    dataPayload[k] = String(v);
+  }
 
   // FCM best-effort
   try {
     const message: admin.messaging.MulticastMessage = {
       tokens,
-      notification: { title, body },
-      data: {
-        title, body, type, path, url: link, ...(data || {}),
-      },
+      data: dataPayload,
       webpush: {
         headers: { Urgency: 'high', TTL: '86400' },
-        notification: {
-          title,
-          body,
-          icon,
-          badge: icon,
-          silent: true,
-          requireInteraction: false,
-        },
         fcmOptions: { link },
-      },
-      android: {
-        priority: 'high',
-        notification: { title, body, channelId: 'swara_aqua_orders', priority: 'high' as const, defaultSound: false },
       },
     };
 

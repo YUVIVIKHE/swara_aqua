@@ -190,8 +190,8 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     }
 
     refresh();
-    // Always sync FCM token so background push works when app is closed
-    registerFcmToken(Notification.permission === 'default');
+    // Register FCM token so push works when app is closed (all roles)
+    registerFcmToken(Notification.permission !== 'denied');
 
     const pollMs = sseConnected ? 120_000 : 15_000;
     const interval = setInterval(refresh, pollMs);

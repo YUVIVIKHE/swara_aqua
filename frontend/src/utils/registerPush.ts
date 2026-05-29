@@ -55,12 +55,10 @@ export const registerPushNotifications = async (
       return { ok: false, permission };
     }
 
-    const stored = localStorage.getItem('fcm_token');
-    if (stored !== token) {
-      await api.post('/notifications/register-token', { token, platform: 'web' });
-      localStorage.setItem('fcm_token', token);
-      console.log('[FCM] Token registered for background push');
-    }
+    // Always sync token to server (user may have re-logged in on same device)
+    await api.post('/notifications/register-token', { token, platform: 'web' });
+    localStorage.setItem('fcm_token', token);
+    console.log('[FCM] Token registered for background push');
 
     return { ok: true, token, permission };
   } catch (err) {

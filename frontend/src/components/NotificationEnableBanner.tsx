@@ -35,7 +35,8 @@ export const NotificationEnableBanner = () => {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-slate-800">Enable real-time alerts</p>
         <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-          Required for alerts in your phone notification panel when the app is closed.
+          Required for alerts when the app is closed or not running (admin, staff, and customer).
+          Install the app to home screen for best results on mobile.
           {sseConnected ? ' Live updates are on.' : ''}
         </p>
         <button

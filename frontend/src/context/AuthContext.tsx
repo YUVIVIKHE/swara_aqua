@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import api from '../api/axios';
+import { registerPushNotifications } from '../utils/registerPush';
 
 export type Role = 'admin' | 'staff' | 'customer';
 
@@ -42,6 +43,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data.user);
+    registerPushNotifications(true).catch(() => {});
   };
 
   const logout = () => {
