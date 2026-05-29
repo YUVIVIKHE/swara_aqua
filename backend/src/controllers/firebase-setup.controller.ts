@@ -24,7 +24,11 @@ export const uploadCredentials = async (req: AuthRequest, res: Response): Promis
 
     const ok = await saveServiceAccountJson(json);
     if (!ok) {
-      res.status(500).json({ message: 'File saved but Firebase failed to initialize. Check server logs.' });
+      res.status(500).json({
+        message:
+          'JSON received but Firebase failed to start. In hPanel restart the Node.js app, then Admin → Profile → Reload Firebase. Check server logs for [Firebase] errors.',
+        ...getFirebaseStatus(),
+      });
       return;
     }
 

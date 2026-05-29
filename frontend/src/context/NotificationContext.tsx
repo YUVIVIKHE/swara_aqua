@@ -1,7 +1,6 @@
 import {
   createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { onMessage } from 'firebase/messaging';
 import { useAuth, type Role } from './AuthContext';
 import api from '../api/axios';
@@ -10,6 +9,7 @@ import { registerPushNotifications } from '../utils/registerPush';
 import { useToast } from '../components/ui/Toast';
 import { playNotificationSound } from '../utils/notificationSound';
 import { notificationScreenPath } from '../utils/notificationRoutes';
+import { showSystemNotification } from '../utils/systemNotification';
 
 const API_ORIGIN = import.meta.env.VITE_API_URL || '';
 
@@ -44,8 +44,6 @@ const NotificationContext = createContext<NotificationContextValue | null>(null)
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const navigate = useNavigate();
-
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -62,29 +60,20 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const refreshRef = useRef<(() => Promise<void>) | null>(null);
   const userRoleRef = useRef(user?.role);
 
-  const showBrowserAlert = useCallback((
+  const showBrowserAlert = useCallback(async (
     title: string,
     body: string,
     type: string,
     orderId?: string
   ) => {
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const role = (user?.role || 'customer') as Role;
-    const displayTitle = title.includes('Swara Aqua') ? title : `Swara Aqua — ${title}`;
-    const n = new Notification(displayTitle, {
+    await showSystemNotification(title, {
       body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      tag: `swara-${type}-${orderId || 'general'}`,
-      silent: false,
-      requireInteraction: false,
+      type,
+      orderId,
+      path: notificationScreenPath(type, role),
     });
-    n.onclick = () => {
-      window.focus();
-      navigate(notificationScreenPath(type, role));
-      n.close();
-    };
-  }, [navigate, user?.role]);
+  }, [user?.role]);
 
   const handleIncoming = useCallback((
     title: string,
@@ -95,7 +84,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     showToast = true
   ) => {
     if (playSound) playNotificationSound();
-    showBrowserAlert(title, body, type, orderId);
+    void showBrowserAlert(title, body, type, orderId).catch(() => {});
     if (showToast) toast(`${title}: ${body}`, 'success');
   }, [showBrowserAlert, toast]);
 

@@ -88,12 +88,15 @@ export const getFirebaseStatus = () => ({
 
 const applyCredentials = (creds: admin.ServiceAccount, jsonPath: string | null): boolean => {
   try {
-    admin.initializeApp({ credential: admin.credential.cert(creds) });
+    if (admin.apps.length === 0) {
+      admin.initializeApp({ credential: admin.credential.cert(creds) });
+    }
     initialized = true;
     source = jsonPath ? 'json' : 'env';
     loadedPath = jsonPath;
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[Firebase] initializeApp failed:', (err as Error).message);
     return false;
   }
 };
@@ -135,9 +138,28 @@ export const initFirebase = async (force = false): Promise<boolean> => {
 
 export const saveServiceAccountJson = async (json: Record<string, unknown>): Promise<boolean> => {
   const target = getCredentialsPath();
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, JSON.stringify(json, null, 2), { encoding: 'utf8', mode: 0o600 });
-  return initFirebase(true);
+  const cwdTarget = path.join(process.cwd(), 'config', 'firebase-service-account.json');
+
+  for (const filePath of [target, cwdTarget]) {
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify(json, null, 2), { encoding: 'utf8', mode: 0o600 });
+      console.log(`[Firebase] Credentials saved to ${filePath}`);
+    } catch (err) {
+      console.warn(`[Firebase] Could not write ${filePath}:`, (err as Error).message);
+    }
+  }
+
+  if (!fs.existsSync(target) && !fs.existsSync(cwdTarget)) {
+    console.error('[Firebase] Credentials file was not written — check folder permissions');
+    return false;
+  }
+
+  const ok = await initFirebase(true);
+  if (ok) {
+    console.log('✅ Firebase Admin initialized after upload', loadedPath || cwdTarget);
+  }
+  return ok;
 };
 
 if (!bootInit()) {

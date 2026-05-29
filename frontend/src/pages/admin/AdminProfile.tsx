@@ -129,7 +129,8 @@ export const AdminProfile = () => {
           {!fbReady && (
             <p className="text-xs text-slate-500 leading-relaxed">
               Download the JSON from Firebase Console → Project settings → Service accounts →
-              Generate new private key. Upload it here (no 255-char Hostinger limit).
+              Generate new private key. Upload it here, then tap Reload. If status stays off,
+              restart the Node.js app in hPanel and upload again.
             </p>
           )}
           <input

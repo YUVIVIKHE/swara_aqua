@@ -3,8 +3,8 @@ import { getToken, onMessage } from 'firebase/messaging';
 import { getFirebaseMessaging } from '../config/firebase';
 import api from '../api/axios';
 import { useToast } from '../components/ui/Toast';
-import { useNavigate } from 'react-router-dom';
 import { playNotificationSound } from '../utils/notificationSound';
+import { showSystemNotification } from '../utils/systemNotification';
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BNutSNz9HosmoEOeGzgz2TibmCtwPBKpgJaq0ty57b0zL1PUHbKSX4bNOKlrvHW16Ej8n5TSdkjiOpVnDvj5eMk';
 
@@ -19,7 +19,6 @@ const SCREEN_MAP: Record<string, string> = {
 
 export const useNotifications = (userId?: number) => {
   const { toast } = useToast();
-  const navigate  = useNavigate();
   const tokenSent = useRef(false);
 
   const requestAndRegister = useCallback(async () => {
@@ -72,21 +71,11 @@ export const useNotifications = (userId?: number) => {
         // Play loud notification sound
         playNotificationSound();
 
-        // Show browser notification with app logo + name + message
-        if (Notification.permission === 'granted') {
-          const n = new Notification(`Swara Aqua — ${title}`, {
-            body,
-            icon:  '/icons/icon-192.png',
-            badge: '/icons/icon-192.png',
-            tag:   `swara-${type}-${Date.now()}`,
-            silent: false,
-          });
-          n.onclick = () => {
-            window.focus();
-            navigate(SCREEN_MAP[type] || '/');
-            n.close();
-          };
-        }
+        void showSystemNotification(title, {
+          body,
+          type,
+          path: SCREEN_MAP[type] || '/',
+        });
 
         // Also show in-app toast
         toast(`${title}: ${body}`, 'success');
@@ -95,7 +84,7 @@ export const useNotifications = (userId?: number) => {
     } catch (err) {
       console.error('FCM setup error:', err);
     }
-  }, [userId, toast, navigate]);
+  }, [userId, toast]);
 
   useEffect(() => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) return;

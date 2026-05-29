@@ -1,4 +1,4 @@
-import admin from '../config/firebase';
+import admin, { isFirebaseReady } from '../config/firebase';
 import pool from '../config/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import * as SSE from './sse.service';
@@ -197,8 +197,8 @@ export const sendToUser = async (payload: SendPayload): Promise<void> => {
     return;
   }
 
-  if (!admin.apps.length) {
-    console.warn('[FCM] Firebase Admin not initialized — set FIREBASE_* env vars on server');
+  if (!isFirebaseReady()) {
+    console.warn('[FCM] Firebase Admin not initialized — upload JSON in Admin → Profile or set FIREBASE_* in .env');
     return;
   }
 
@@ -258,7 +258,7 @@ export const sendToRole = async (
     return;
   }
 
-  if (!admin.apps.length) {
+  if (!isFirebaseReady()) {
     console.warn('[FCM] Firebase Admin not initialized');
     return;
   }
