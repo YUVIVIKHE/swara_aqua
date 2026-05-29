@@ -118,7 +118,11 @@ export const initFirebase = async (force = false): Promise<boolean> => {
   if (isFirebaseReady() && !force) return true;
 
   if (force && admin.apps.length) {
-    await Promise.all(admin.apps.map(app => app.delete()));
+    await Promise.all(
+      admin.apps
+        .filter((app): app is admin.app.App => app != null)
+        .map(app => app.delete())
+    );
     initialized = false;
     source = null;
     loadedPath = null;
