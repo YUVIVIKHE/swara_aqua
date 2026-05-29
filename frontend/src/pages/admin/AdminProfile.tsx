@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, Shield, Activity, LogOut, Lock, KeyRound, Eye, EyeOff, CalendarDays } from 'lucide-react';
+import { Phone, Shield, Activity, LogOut, Lock, KeyRound, Eye, EyeOff, CalendarDays, Bell, Upload, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../components/ui/Toast';
@@ -17,6 +17,34 @@ export const AdminProfile = () => {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew]         = useState(false);
   const [submitting, setSubmitting]   = useState(false);
+
+  const [fbReady, setFbReady]         = useState<boolean | null>(null);
+  const [fbUploading, setFbUploading] = useState(false);
+  const fileInputRef                  = useRef<HTMLInputElement>(null);
+
+  const loadFirebaseStatus = () => {
+    api.get('/admin/firebase/status')
+      .then(({ data }) => setFbReady(data.ready))
+      .catch(() => setFbReady(false));
+  };
+
+  useEffect(() => { loadFirebaseStatus(); }, []);
+
+  const handleFirebaseFile = async (file: File) => {
+    setFbUploading(true);
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const { data } = await api.post('/admin/firebase/upload', json);
+      toast(data.message || 'Firebase configured', 'success');
+      setFbReady(true);
+    } catch (err: any) {
+      toast(err?.response?.data?.message || 'Invalid JSON or upload failed', 'error');
+    } finally {
+      setFbUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +110,65 @@ export const AdminProfile = () => {
             </div>
           </div>
         ))}
+      </motion.div>
+
+      {/* Push notifications (Firebase) */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.4 }}
+        className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-50">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Bell className="w-4 h-4 text-brand-500" />
+            Push Notifications (Firebase)
+          </h3>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div className={`flex items-center gap-2 text-sm font-semibold ${fbReady ? 'text-green-700' : 'text-amber-700'}`}>
+            {fbReady ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+            {fbReady === null ? 'Checking…' : fbReady ? 'Active — mobile push enabled' : 'Not configured'}
+          </div>
+          {!fbReady && (
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Download the JSON from Firebase Console → Project settings → Service accounts →
+              Generate new private key. Upload it here (no 255-char Hostinger limit).
+            </p>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) handleFirebaseFile(f);
+            }}
+          />
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              size="sm"
+              loading={fbUploading}
+              icon={<Upload className="w-3.5 h-3.5" />}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload Firebase JSON
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw className="w-3.5 h-3.5" />}
+              onClick={async () => {
+                try {
+                  const { data } = await api.post('/admin/firebase/reload');
+                  toast(data.message, data.ready ? 'success' : 'error');
+                  setFbReady(data.ready);
+                } catch {
+                  toast('Reload failed', 'error');
+                }
+              }}
+            >
+              Reload
+            </Button>
+          </div>
+        </div>
       </motion.div>
 
       {/* Security section */}
