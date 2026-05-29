@@ -25,15 +25,8 @@ const DEFAULT_PATHS = {
   general: '/',
 };
 
-const recentTags = new Map();
-
-function shouldShow(tag) {
-  var now = Date.now();
-  var prev = recentTags.get(tag);
-  if (prev && now - prev < 15000) return false;
-  recentTags.set(tag, now);
-  return true;
-}
+// Synchronous dedup — push + onBackgroundMessage must not both show the same alert
+const shownTags = new Set();
 
 function resolvePath(type, data) {
   if (data.path && String(data.path).startsWith('/')) return data.path;
@@ -66,7 +59,9 @@ function showSystemNotification(raw) {
   var path = resolvePath(type, data);
   var tag = 'swara-' + type + '-' + (orderId || 'alert');
 
-  if (!shouldShow(tag)) return Promise.resolve();
+  if (shownTags.has(tag)) return Promise.resolve();
+  shownTags.add(tag);
+  setTimeout(function() { shownTags.delete(tag); }, 30000);
 
   var displayTitle = String(title).includes('Swara Aqua') ? title : 'Swara Aqua — ' + title;
 
@@ -87,24 +82,9 @@ function showSystemNotification(raw) {
   });
 }
 
-// App in background or fully closed — always show via SW
+// Only use onBackgroundMessage — do NOT also listen to "push" (causes duplicate alerts)
 messaging.onBackgroundMessage(function(payload) {
-  console.log('[FCM SW] background message');
   return showSystemNotification(payload);
-});
-
-self.addEventListener('push', function(event) {
-  if (!event.data) return;
-  try {
-    var raw = event.data.json();
-    event.waitUntil(showSystemNotification(raw));
-  } catch (e) {
-    try {
-      event.waitUntil(showSystemNotification({
-        data: { title: 'Swara Aqua', body: event.data.text() || 'New notification' },
-      }));
-    } catch (e2) { /* ignore */ }
-  }
 });
 
 self.addEventListener('notificationclick', function(event) {

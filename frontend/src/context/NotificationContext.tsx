@@ -55,6 +55,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
   const prevUnread = useRef(0);
   const fcmRegistered = useRef(false);
+  const fcmListenerAttached = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const handleIncomingRef = useRef<(typeof handleIncoming) | null>(null);
   const refreshRef = useRef<(() => Promise<void>) | null>(null);
@@ -84,8 +85,12 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     showToast = true
   ) => {
     if (!shouldShowNotification(type, title, body, orderId)) return;
-    void showBrowserAlert(title, body, type, orderId).catch(() => {});
-    if (showToast) toast(`${title}: ${body}`, 'success');
+    const appVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
+    // App open — update inbox only; shade notification is shown once by SW when app is closed
+    if (!appVisible) {
+      void showBrowserAlert(title, body, type, orderId).catch(() => {});
+      if (showToast) toast(`${title}: ${body}`, 'success');
+    }
   }, [showBrowserAlert, toast]);
 
   const pushLocal = useCallback((
@@ -143,14 +148,19 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
       setPushEnabled(true);
 
       const messaging = await getFirebaseMessaging();
-      if (messaging) {
+      if (messaging && !fcmListenerAttached.current) {
+        fcmListenerAttached.current = true;
         onMessage(messaging, (payload) => {
           const title = payload.notification?.title || payload.data?.title || 'Notification';
           const body = payload.notification?.body || payload.data?.body || '';
           const type = (payload.data?.type as string) || 'general';
           const orderId = payload.data?.orderId as string | undefined;
-          handleIncoming(title, body, type, false, orderId, false);
-          refresh();
+          if (document.visibilityState === 'visible') {
+            void refreshRef.current?.();
+            return;
+          }
+          handleIncomingRef.current?.(title, body, type, false, orderId, false);
+          void refreshRef.current?.();
         });
       }
 
@@ -172,6 +182,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
       localStorage.removeItem('fcm_token');
     }
     fcmRegistered.current = false;
+    fcmListenerAttached.current = false;
     setPushEnabled(false);
   }, []);
 
@@ -186,6 +197,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
       setUnreadCount(0);
       prevUnread.current = 0;
       fcmRegistered.current = false;
+      fcmListenerAttached.current = false;
       return;
     }
 
@@ -225,6 +237,10 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     es.addEventListener('notification', (ev) => {
       try {
         const data = JSON.parse((ev as MessageEvent).data);
+        if (document.visibilityState === 'visible') {
+          void refreshRef.current?.();
+          return;
+        }
         const title = data.title || 'Notification';
         const body = data.body || '';
         const type = data.type || 'general';
