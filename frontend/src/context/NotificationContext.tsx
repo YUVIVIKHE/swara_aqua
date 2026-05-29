@@ -2,16 +2,14 @@ import {
   createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getToken, onMessage } from 'firebase/messaging';
+import { onMessage } from 'firebase/messaging';
 import { useAuth, type Role } from './AuthContext';
 import api from '../api/axios';
 import { getFirebaseMessaging } from '../config/firebase';
+import { registerPushNotifications } from '../utils/registerPush';
 import { useToast } from '../components/ui/Toast';
 import { playNotificationSound } from '../utils/notificationSound';
 import { notificationScreenPath } from '../utils/notificationRoutes';
-
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY
-  || 'BNutSNz9HosmoEOeGzgz2TibmCtwPBKpgJaq0ty57b0zL1PUHbKSX4bNOKlrvHW16Ej8n5TSdkjiOpVnDvj5eMk';
 
 const API_ORIGIN = import.meta.env.VITE_API_URL || '';
 
@@ -36,7 +34,9 @@ interface NotificationContextValue {
   markAllRead: () => Promise<void>;
   enablePush: () => Promise<boolean>;
   unregisterPush: () => Promise<void>;
-  showBrowserAlert: (title: string, body: string, type: string) => void;
+  showBrowserAlert: (title: string, body: string, type: string, orderId?: string) => void;
+  /** Instant sound + system notification (e.g. right after placing an order). */
+  pushLocal: (title: string, body: string, type: string, orderId?: string) => void;
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
@@ -59,15 +59,22 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const fcmRegistered = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
-  const showBrowserAlert = useCallback((title: string, body: string, type: string) => {
+  const showBrowserAlert = useCallback((
+    title: string,
+    body: string,
+    type: string,
+    orderId?: string
+  ) => {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const role = (user?.role || 'customer') as Role;
-    const n = new Notification(`Swara Aqua — ${title}`, {
+    const displayTitle = title.includes('Swara Aqua') ? title : `Swara Aqua — ${title}`;
+    const n = new Notification(displayTitle, {
       body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
-      tag: `swara-${type}-${Date.now()}`,
+      tag: `swara-${type}-${orderId || 'general'}`,
       silent: false,
+      requireInteraction: false,
     });
     n.onclick = () => {
       window.focus();
@@ -76,11 +83,27 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [navigate, user?.role]);
 
-  const handleIncoming = useCallback((title: string, body: string, type: string, playSound = true) => {
+  const handleIncoming = useCallback((
+    title: string,
+    body: string,
+    type: string,
+    playSound = true,
+    orderId?: string,
+    showToast = true
+  ) => {
     if (playSound) playNotificationSound();
-    showBrowserAlert(title, body, type);
-    toast(`${title}: ${body}`, 'success');
+    showBrowserAlert(title, body, type, orderId);
+    if (showToast) toast(`${title}: ${body}`, 'success');
   }, [showBrowserAlert, toast]);
+
+  const pushLocal = useCallback((
+    title: string,
+    body: string,
+    type: string,
+    orderId?: string
+  ) => {
+    handleIncoming(title, body, type, true, orderId, true);
+  }, [handleIncoming]);
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -116,45 +139,35 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     prevUnread.current = 0;
   }, []);
 
-  const registerFcmToken = useCallback(async (): Promise<boolean> => {
-    if (!user || fcmRegistered.current) return pushEnabled;
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) return false;
+  const registerFcmToken = useCallback(async (askPermission = true): Promise<boolean> => {
+    if (!user) return false;
 
     try {
-      const perm = await Notification.requestPermission();
-      setPermission(perm);
-      if (perm !== 'granted') return false;
+      const result = await registerPushNotifications(askPermission);
+      setPermission(result.permission);
+      if (!result.ok) return false;
 
-      const messaging = await getFirebaseMessaging();
-      if (!messaging) return false;
-
-      const registration = await navigator.serviceWorker.ready;
-      const token = await getToken(messaging, {
-        vapidKey: VAPID_KEY,
-        serviceWorkerRegistration: registration,
-      });
-
-      if (!token) return false;
-
-      await api.post('/notifications/register-token', { token, platform: 'web' });
-      localStorage.setItem('fcm_token', token);
       fcmRegistered.current = true;
       setPushEnabled(true);
 
-      onMessage(messaging, (payload) => {
-        const title = payload.notification?.title || payload.data?.title || 'Notification';
-        const body = payload.notification?.body || payload.data?.body || '';
-        const type = (payload.data?.type as string) || 'general';
-        handleIncoming(title, body, type, true);
-        refresh();
-      });
+      const messaging = await getFirebaseMessaging();
+      if (messaging) {
+        onMessage(messaging, (payload) => {
+          const title = payload.notification?.title || payload.data?.title || 'Notification';
+          const body = payload.notification?.body || payload.data?.body || '';
+          const type = (payload.data?.type as string) || 'general';
+          const orderId = payload.data?.orderId as string | undefined;
+          handleIncoming(title, body, type, true, orderId, true);
+          refresh();
+        });
+      }
 
       return true;
     } catch (err) {
       console.error('[FCM] registration failed:', err);
       return false;
     }
-  }, [user, pushEnabled, handleIncoming, refresh]);
+  }, [user, handleIncoming, refresh]);
 
   const enablePush = useCallback(async () => registerFcmToken(), [registerFcmToken]);
 
@@ -181,7 +194,8 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     }
 
     refresh();
-    if (!fcmRegistered.current) registerFcmToken();
+    // Always sync FCM token so background push works when app is closed
+    registerFcmToken(Notification.permission === 'default');
 
     const pollMs = sseConnected ? 120_000 : 15_000;
     const interval = setInterval(refresh, pollMs);
@@ -215,9 +229,29 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         const title = data.title || 'Notification';
         const body = data.body || '';
         const type = data.type || 'general';
-        handleIncoming(title, body, type, true);
+        const orderId = data.data?.orderId || data.orderId;
+        handleIncoming(title, body, type, true, orderId, true);
         refresh();
       } catch { refresh(); }
+    });
+
+    es.addEventListener('order_created', (ev) => {
+      try {
+        const data = JSON.parse((ev as MessageEvent).data);
+        const orderId = String(data.orderId || '');
+        const qty = data.quantity ?? '';
+        // Staff already get targeted push via sendToUser; admin gets this live alert
+        if (user?.role === 'admin') {
+          handleIncoming(
+            'New Order 📦',
+            `Order #${orderId}${qty ? ` — ${qty} jars` : ''} placed by customer`,
+            'order',
+            orderId,
+            true
+          );
+          refresh();
+        }
+      } catch { /* ignore */ }
     });
 
     return () => {
@@ -239,6 +273,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     enablePush,
     unregisterPush,
     showBrowserAlert,
+    pushLocal,
   };
 
   return (

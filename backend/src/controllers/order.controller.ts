@@ -146,17 +146,20 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
     SSE.broadcastToRoles(['admin', 'staff'], 'order_created', { orderId, quantity, customerId: req.user!.id });
     SSE.sendToUser(req.user!.id, 'order_created', { orderId, quantity, status: 'assigned' });
 
-    notify(() =>
-      NotifService.sendToUser({
+    // Customer confirmation — await so push reaches device before HTTP response ends
+    try {
+      await NotifService.sendToUser({
         userId: req.user!.id,
         title:  scheduledForTomorrow ? 'Order Scheduled 📅' : 'Order Placed ✅',
         body:   scheduledForTomorrow
           ? `Your ${quantity} jar order is scheduled for tomorrow.`
-          : `Your order for ${quantity} jars has been placed and assigned.`,
+          : `Your order #${orderId} for ${quantity} jars has been placed successfully.`,
         type:   'order',
         data:   { orderId: String(orderId) },
-      })
-    );
+      });
+    } catch (err) {
+      console.warn('Customer order notification failed (non-fatal):', (err as Error).message);
+    }
 
     const msg = scheduledForTomorrow
       ? 'Order scheduled for tomorrow (outside booking hours)'

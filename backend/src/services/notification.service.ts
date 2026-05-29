@@ -88,65 +88,92 @@ const siteUrl = () => process.env.FRONTEND_URL || 'https://swaraaqua.labxco.in';
 
 const iconUrl = () => `${siteUrl()}/icons/icon-192.png`;
 
-const screenLink = (type: string): string => {
-  const map: Record<string, string> = {
-    order:    '/customer/orders',
-    payment:  '/customer/wallet',
-    delivery: '/staff/deliveries',
-    approval: '/admin/users',
-    stock:    '/admin/inventory',
-    general:  '/',
-  };
-  return siteUrl() + (map[type] || '/');
+const ROLE_PATHS: Record<string, Record<string, string>> = {
+  admin: {
+    order: '/admin/orders', payment: '/admin/billing', delivery: '/admin/orders',
+    approval: '/admin/users', stock: '/admin/inventory', general: '/admin',
+  },
+  staff: {
+    order: '/staff/deliveries', payment: '/staff/deliveries', delivery: '/staff/deliveries',
+    stock: '/staff/deliveries', general: '/staff/deliveries',
+  },
+  customer: {
+    order: '/customer/orders', payment: '/customer/wallet', delivery: '/customer/orders',
+    subscription: '/customer/plan', general: '/customer',
+  },
+};
+
+const getUserRole = async (userId: number): Promise<string> => {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    'SELECT role FROM users WHERE id = ?',
+    [userId]
+  );
+  return (rows[0]?.role as string) || 'customer';
 };
 
 // ── FCM send ──────────────────────────────────────────────────────────────────
 
-const buildMessage = (token: string, payload: SendPayload): admin.messaging.Message => ({
-  token,
-  notification: {
-    title: payload.title,
-    body:  payload.body,
-  },
-  webpush: {
+/** Web push with notification payload — OS shows alert when app is closed. */
+const buildMessage = async (
+  token: string,
+  payload: SendPayload,
+  userId: number
+): Promise<admin.messaging.Message> => {
+  const role = await getUserRole(userId);
+  const path = ROLE_PATHS[role]?.[payload.type] || ROLE_PATHS[role]?.general || '/';
+  const link = siteUrl() + path;
+  const icon = iconUrl();
+
+  return {
+    token,
     notification: {
-      title:              payload.title,
-      body:               payload.body,
-      icon:               iconUrl(),
-      badge:              iconUrl(),
-      requireInteraction: true,
-      data: { type: payload.type, ...(payload.data || {}) },
+      title: payload.title,
+      body:  payload.body,
     },
-    fcmOptions: { link: screenLink(payload.type) },
-  },
-  android: {
-    priority: 'high',
-    notification: {
-      title:        payload.title,
-      body:         payload.body,
-      sound:        'default',
-      channelId:    'swara_aqua_default',
-      priority:     'high',
-      defaultSound: true,
+    data: {
+      title: payload.title,
+      body:  payload.body,
+      type:  payload.type,
+      path,
+      url:   link,
+      ...(payload.data || {}),
     },
-  },
-  apns: {
-    payload: {
-      aps: {
-        sound:            'default',
-        badge:            1,
-        contentAvailable: true,
-        alert: { title: payload.title, body: payload.body },
+    webpush: {
+      headers: {
+        Urgency: 'high',
+        TTL:     '86400',
+      },
+      notification: {
+        title:              payload.title,
+        body:               payload.body,
+        icon,
+        badge:              icon,
+        requireInteraction: true,
+      },
+      fcmOptions: { link },
+    },
+    android: {
+      priority: 'high',
+      notification: {
+        title:        payload.title,
+        body:         payload.body,
+        sound:        'default',
+        channelId:    'swara_aqua_orders',
+        priority:     'high' as const,
+        defaultSound: true,
       },
     },
-  },
-  data: {
-    title: payload.title,
-    body:  payload.body,
-    type:  payload.type,
-    ...(payload.data || {}),
-  },
-});
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1,
+          alert: { title: payload.title, body: payload.body },
+        },
+      },
+    },
+  };
+};
 
 /**
  * Send to a single user — fans out to all their registered tokens.
@@ -165,12 +192,23 @@ export const sendToUser = async (payload: SendPayload): Promise<void> => {
     data: payload.data || {},
   });
 
-  if (!tokens.length) return;
+  if (!tokens.length) {
+    console.warn(`[FCM] No device tokens for user ${payload.userId} — enable notifications in the app`);
+    return;
+  }
+
+  if (!admin.apps.length) {
+    console.warn('[FCM] Firebase Admin not initialized — set FIREBASE_* env vars on server');
+    return;
+  }
 
   // FCM is best-effort — don't throw if Firebase not configured
   try {
     const results = await Promise.allSettled(
-      tokens.map(token => admin.messaging().send(buildMessage(token, payload)))
+      tokens.map(async (token) => {
+        const msg = await buildMessage(token, payload, payload.userId);
+        return admin.messaging().send(msg);
+      })
     );
 
     for (let i = 0; i < results.length; i++) {
@@ -215,28 +253,43 @@ export const sendToRole = async (
 
   SSE.broadcastToRole(role, 'notification', { title, body, type, data: data || {} });
 
-  if (!tokens.length) return;
+  if (!tokens.length) {
+    console.warn(`[FCM] No device tokens for role ${role}`);
+    return;
+  }
+
+  if (!admin.apps.length) {
+    console.warn('[FCM] Firebase Admin not initialized');
+    return;
+  }
+
+  const path = ROLE_PATHS[role]?.[type] || ROLE_PATHS[role]?.general || '/';
+  const link = siteUrl() + path;
+  const icon = iconUrl();
 
   // FCM best-effort
   try {
     const message: admin.messaging.MulticastMessage = {
       tokens,
       notification: { title, body },
+      data: {
+        title, body, type, path, url: link, ...(data || {}),
+      },
       webpush: {
+        headers: { Urgency: 'high', TTL: '86400' },
         notification: {
-          title, body,
-          icon:               iconUrl(),
-          badge:              iconUrl(),
+          title,
+          body,
+          icon,
+          badge: icon,
           requireInteraction: true,
-          data:               { type, ...(data || {}) },
         },
-        fcmOptions: { link: screenLink(type) },
+        fcmOptions: { link },
       },
       android: {
         priority: 'high',
-        notification: { title, body, sound: 'default', channelId: 'swara_aqua_default', priority: 'high' },
+        notification: { title, body, sound: 'default', channelId: 'swara_aqua_orders', priority: 'high' as const },
       },
-      data: { title, body, type, ...(data || {}) },
     };
 
     const response = await admin.messaging().sendEachForMulticast(message);

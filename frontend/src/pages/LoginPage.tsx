@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { InstallAppButton } from '../components/PWAInstall';
+import { registerPushNotifications } from '../utils/registerPush';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
@@ -23,6 +24,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(phone, password);
+      // Register for background push (mobile notification panel when app is closed)
+      registerPushNotifications(true).catch(() => {});
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Invalid credentials');
     } finally {

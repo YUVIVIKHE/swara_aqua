@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/Toast';
 import { useOrders } from '../../hooks/useOrders';
 import { ordersApi, Order, TimelineEntry, Delivery } from '../../api/orders';
 import { useAuth } from '../../context/AuthContext';
+import { useNotificationCenter } from '../../context/NotificationContext';
 import { addressApi, UserAddress } from '../../api/address';
 import { walletApi } from '../../api/wallet';
 import { loadRazorpay } from '../../utils/razorpay';
@@ -31,6 +32,7 @@ type DetailState = { order: Order; timeline: TimelineEntry[]; delivery: Delivery
 export const CustomerOrders = () => {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { pushLocal, enablePush } = useNotificationCenter();
   const { orders, loading, error, refresh } = useOrders();
   const [searchParams, setSearchParams] = useSearchParams();
   const PRICE_PER_JAR = user?.jar_rate || 50;
@@ -143,6 +145,14 @@ export const CustomerOrders = () => {
         });
         modeLabel = 'Paid via Razorpay';
       }
+
+      // Instant sound + mobile notification panel (user gesture unlocks audio)
+      const notifTitle = scheduledForTomorrow ? 'Order Scheduled 📅' : 'Order Placed ✅';
+      const notifBody = scheduledForTomorrow
+        ? `Your ${form.quantity} jar order is scheduled for tomorrow.`
+        : `Your order #${orderId} for ${form.quantity} jars has been placed successfully.`;
+      await enablePush();
+      pushLocal(notifTitle, notifBody, 'order', String(orderId));
 
       // Show success screen
       setOrderSuccess({ orderId, quantity: form.quantity, total: totalAmount, mode: modeLabel, scheduledForTomorrow });

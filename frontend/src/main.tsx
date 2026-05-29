@@ -4,12 +4,12 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
 
-// Register Firebase messaging service worker only
-// No PWA/Workbox SW — FCM handles background notifications
+// Register FCM service worker early — required for push when app is closed
+import { ensureMessagingServiceWorker } from './utils/registerPush';
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' })
-    .then(reg => console.log('[FCM SW] Registered:', reg.scope))
-    .catch(err => console.error('[FCM SW] Registration failed:', err));
+  ensureMessagingServiceWorker()
+    .then((reg) => reg && console.log('[FCM SW] Ready:', reg.scope))
+    .catch((err) => console.error('[FCM SW] Registration failed:', err));
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

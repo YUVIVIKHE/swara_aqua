@@ -14,9 +14,9 @@ export const NotificationEnableBanner = () => {
 
   const handleEnable = async () => {
     setEnabling(true);
-    await enablePush();
+    const ok = await enablePush();
     setEnabling(false);
-    if (Notification.permission === 'granted') {
+    if (ok || Notification.permission === 'granted') {
       sessionStorage.setItem('notif-banner-dismissed', '1');
       setDismissed(true);
     }
@@ -35,8 +35,8 @@ export const NotificationEnableBanner = () => {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-slate-800">Enable real-time alerts</p>
         <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-          Get instant notifications for orders, deliveries, and payments
-          {sseConnected ? ' (live updates on)' : ''}.
+          Required for alerts in your phone notification panel when the app is closed.
+          {sseConnected ? ' Live updates are on.' : ''}
         </p>
         <button
           type="button"

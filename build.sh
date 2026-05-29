@@ -19,6 +19,15 @@ cd frontend
 npm install
 
 echo "🔨 Building frontend..."
+# Vite embeds VITE_* at build time (required for FCM / background push)
+export VITE_FIREBASE_API_KEY=AIzaSyBuM5DkMqfW-STRiEyi3OCIVWk8E3aHz7g
+export VITE_FIREBASE_AUTH_DOMAIN=waterdelivery-a2126.firebaseapp.com
+export VITE_FIREBASE_PROJECT_ID=waterdelivery-a2126
+export VITE_FIREBASE_STORAGE_BUCKET=waterdelivery-a2126.firebasestorage.app
+export VITE_FIREBASE_MESSAGING_SENDER_ID=86432708341
+export VITE_FIREBASE_APP_ID=1:86432708341:web:d89c23e595ca4df023b7bc
+export VITE_FIREBASE_MEASUREMENT_ID=G-DPGK2X7N59
+export VITE_FIREBASE_VAPID_KEY=BNutSNz9HosmoEOeGzgz2TibmCtwPBKpgJaq0ty57b0zL1PUHbKSX4bNOKlrvHW16Ej8n5TSdkjiOpVnDvj5eMk
 ./node_modules/.bin/vite build
 
 echo "📁 Copying frontend dist → backend/public..."
@@ -57,9 +66,8 @@ JWT_EXPIRES_IN=15m
 JWT_REFRESH_SECRET=change_this_to_another_random_string
 JWT_REFRESH_EXPIRES_IN=7d
 FRONTEND_URL=https://swaraaqua.labxco.in
-FIREBASE_PROJECT_ID=waterdelivery-a2126
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@waterdelivery-a2126.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="YOUR_FIREBASE_PRIVATE_KEY_HERE"
+# Firebase: use JSON file (upload backend/config/firebase-service-account.json via File Manager)
+FIREBASE_SERVICE_ACCOUNT_PATH=config/firebase-service-account.json
 RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxxxx
 RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx
 EOF
