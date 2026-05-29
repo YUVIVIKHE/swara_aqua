@@ -7,9 +7,9 @@ import api from '../api/axios';
 import { getFirebaseMessaging } from '../config/firebase';
 import { registerPushNotifications } from '../utils/registerPush';
 import { useToast } from '../components/ui/Toast';
-import { playNotificationSound } from '../utils/notificationSound';
 import { notificationScreenPath } from '../utils/notificationRoutes';
 import { showSystemNotification } from '../utils/systemNotification';
+import { shouldShowNotification } from '../utils/notificationDedup';
 
 const API_ORIGIN = import.meta.env.VITE_API_URL || '';
 
@@ -79,11 +79,11 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     title: string,
     body: string,
     type: string,
-    playSound = true,
+    _playSound = false,
     orderId?: string,
     showToast = true
   ) => {
-    if (playSound) playNotificationSound();
+    if (!shouldShowNotification(type, title, body, orderId)) return;
     void showBrowserAlert(title, body, type, orderId).catch(() => {});
     if (showToast) toast(`${title}: ${body}`, 'success');
   }, [showBrowserAlert, toast]);
@@ -94,7 +94,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     type: string,
     orderId?: string
   ) => {
-    handleIncoming(title, body, type, true, orderId, true);
+    handleIncoming(title, body, type, false, orderId, true);
   }, [handleIncoming]);
 
   const refresh = useCallback(async () => {
@@ -106,7 +106,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
       const count = data.unreadCount as number;
       if (count > prevUnread.current && prevUnread.current > 0 && !sseConnected) {
         const latest = (data.notifications as AppNotification[]).find(n => !n.is_read);
-        if (latest) handleIncoming(latest.title, latest.body, latest.type, true);
+        if (latest) handleIncoming(latest.title, latest.body, latest.type, false);
       }
       prevUnread.current = count;
       setUnreadCount(count);
@@ -149,7 +149,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
           const body = payload.notification?.body || payload.data?.body || '';
           const type = (payload.data?.type as string) || 'general';
           const orderId = payload.data?.orderId as string | undefined;
-          handleIncoming(title, body, type, true, orderId, true);
+          handleIncoming(title, body, type, false, orderId, false);
           refresh();
         });
       }
@@ -229,30 +229,16 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         const body = data.body || '';
         const type = data.type || 'general';
         const orderId = data.data?.orderId || data.orderId;
-        handleIncomingRef.current?.(title, body, type, true, orderId, true);
+        handleIncomingRef.current?.(title, body, type, false, orderId, true);
         void refreshRef.current?.();
       } catch {
         void refreshRef.current?.();
       }
     });
 
-    es.addEventListener('order_created', (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data);
-        const orderId = String(data.orderId || '');
-        const qty = data.quantity ?? '';
-        if (userRoleRef.current === 'admin') {
-          handleIncomingRef.current?.(
-            'New Order 📦',
-            `Order #${orderId}${qty ? ` — ${qty} jars` : ''} placed by customer`,
-            'order',
-            true,
-            orderId,
-            true
-          );
-          void refreshRef.current?.();
-        }
-      } catch { /* ignore */ }
+    // Refresh lists only — push/SSE "notification" event already alerts staff/admin
+    es.addEventListener('order_created', () => {
+      void refreshRef.current?.();
     });
 
     return () => {

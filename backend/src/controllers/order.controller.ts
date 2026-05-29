@@ -129,6 +129,16 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
           })
         );
       }
+
+      notify(() =>
+        NotifService.sendToRole(
+          'admin',
+          'New Order 📦',
+          `Order #${orderId} — ${quantity} jars placed`,
+          'order',
+          { orderId: String(orderId) }
+        )
+      );
     } else {
       // No active staff — keep pending, notify admin
       notify(() =>

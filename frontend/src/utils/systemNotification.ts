@@ -36,7 +36,7 @@ export async function showSystemNotification(
         icon,
         badge: icon,
         tag,
-        silent: false,
+        silent: true,
         data,
       });
       return;
@@ -51,7 +51,7 @@ export async function showSystemNotification(
       icon,
       badge: icon,
       tag,
-      silent: false,
+      silent: true,
     });
   } catch (err) {
     console.warn('[notify] Notification constructor not allowed:', err);

@@ -148,7 +148,8 @@ const buildMessage = async (
         body:               payload.body,
         icon,
         badge:              icon,
-        requireInteraction: true,
+        silent:             true,
+        requireInteraction: false,
       },
       fcmOptions: { link },
     },
@@ -157,16 +158,14 @@ const buildMessage = async (
       notification: {
         title:        payload.title,
         body:         payload.body,
-        sound:        'default',
         channelId:    'swara_aqua_orders',
         priority:     'high' as const,
-        defaultSound: true,
+        defaultSound: false,
       },
     },
     apns: {
       payload: {
         aps: {
-          sound: 'default',
           badge: 1,
           alert: { title: payload.title, body: payload.body },
         },
@@ -282,13 +281,14 @@ export const sendToRole = async (
           body,
           icon,
           badge: icon,
-          requireInteraction: true,
+          silent: true,
+          requireInteraction: false,
         },
         fcmOptions: { link },
       },
       android: {
         priority: 'high',
-        notification: { title, body, sound: 'default', channelId: 'swara_aqua_orders', priority: 'high' as const },
+        notification: { title, body, channelId: 'swara_aqua_orders', priority: 'high' as const, defaultSound: false },
       },
     };
 

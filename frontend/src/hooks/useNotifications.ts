@@ -3,8 +3,8 @@ import { getToken, onMessage } from 'firebase/messaging';
 import { getFirebaseMessaging } from '../config/firebase';
 import api from '../api/axios';
 import { useToast } from '../components/ui/Toast';
-import { playNotificationSound } from '../utils/notificationSound';
 import { showSystemNotification } from '../utils/systemNotification';
+import { shouldShowNotification } from '../utils/notificationDedup';
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BNutSNz9HosmoEOeGzgz2TibmCtwPBKpgJaq0ty57b0zL1PUHbKSX4bNOKlrvHW16Ej8n5TSdkjiOpVnDvj5eMk';
 
@@ -68,8 +68,7 @@ export const useNotifications = (userId?: number) => {
         const body  = payload.notification?.body  || payload.data?.body  || '';
         const type  = (payload.data?.type as string) || 'general';
 
-        // Play loud notification sound
-        playNotificationSound();
+        if (!shouldShowNotification(type, title, body)) return;
 
         void showSystemNotification(title, {
           body,
@@ -77,7 +76,6 @@ export const useNotifications = (userId?: number) => {
           path: SCREEN_MAP[type] || '/',
         });
 
-        // Also show in-app toast
         toast(`${title}: ${body}`, 'success');
       });
 
