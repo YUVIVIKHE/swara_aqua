@@ -4,6 +4,11 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import pool from '../config/db';
 import { RowDataPacket } from 'mysql2';
 import bcrypt from 'bcryptjs';
+import * as NotifService from '../services/notification.service';
+
+const notify = (fn: () => Promise<void>) => {
+  fn().catch(err => console.warn('FCM notification failed (non-fatal):', err?.message));
+};
 
 export const getStats = async (_req: AuthRequest, res: Response): Promise<void> => {
   const [rows] = await pool.query<RowDataPacket[]>(
@@ -330,7 +335,47 @@ export const createOrderForCustomer = async (req: AuthRequest, res: Response): P
         'INSERT INTO order_timeline (order_id, status, note, created_by) VALUES (?, ?, ?, ?)',
         [orderId, 'assigned', `Auto-assigned to ${assignedStaff.name}`, req.user!.id]
       );
+
+      notify(() =>
+        NotifService.sendToUser({
+          userId: assignedStaff.id,
+          title:  'New Delivery Assigned! 📦',
+          body:   `Order #${orderId} — ${quantity} jars from ${customer.name}`,
+          type:   'delivery',
+          data:   { orderId: String(orderId) },
+        })
+      );
+
+      notify(() =>
+        NotifService.sendToRole(
+          'admin',
+          'New Order 📦',
+          `Order #${orderId} — ${quantity} jars for ${customer.name}`,
+          'order',
+          { orderId: String(orderId) }
+        )
+      );
+    } else {
+      notify(() =>
+        NotifService.sendToRole(
+          'admin',
+          'New Order 📦',
+          `Order #${orderId} for ${customer.name} — no staff available to assign`,
+          'order',
+          { orderId: String(orderId) }
+        )
+      );
     }
+
+    notify(() =>
+      NotifService.sendToUser({
+        userId: Number(customerId),
+        title:  'Order Placed ✅',
+        body:   `Your order #${orderId} for ${quantity} jars has been placed.`,
+        type:   'order',
+        data:   { orderId: String(orderId) },
+      })
+    );
 
     res.status(201).json({ message: 'Order placed successfully', orderId, totalAmount });
   } catch (err) {

@@ -2,7 +2,12 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import * as UserModel from '../models/user.model';
+import * as NotifService from '../services/notification.service';
 import { AuthRequest } from '../middleware/auth.middleware';
+
+const notify = (fn: () => Promise<void>) => {
+  fn().catch(err => console.warn('FCM notification failed (non-fatal):', err?.message));
+};
 
 import { StringValue } from 'ms';
 
@@ -44,6 +49,16 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       const AddrModel = await import('../models/address.model');
       await AddrModel.addAddress(userId, { label: 'Home', address: address.trim(), isDefault: true });
     }
+
+    notify(() =>
+      NotifService.sendToRole(
+        'admin',
+        'New Customer Registration 👤',
+        `${name} (${phone}) signed up — pending your approval`,
+        'approval',
+        { userId: String(userId), customerId: String(userId) }
+      )
+    );
 
     res.status(201).json({
       message: 'Registration submitted. Waiting for admin approval.',

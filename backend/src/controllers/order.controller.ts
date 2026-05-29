@@ -59,9 +59,10 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
 
     // Use customer's personalized jar rate from DB
     const [userRows] = await pool.query<RowDataPacket[]>(
-      'SELECT jar_rate FROM users WHERE id = ?',
+      'SELECT jar_rate, name FROM users WHERE id = ?',
       [req.user!.id]
     );
+    const customerName = userRows.length ? String(userRows[0].name) : 'Customer';
     const customerRate = userRows.length ? Number(userRows[0].jar_rate) : DEFAULT_PRICE;
     const price = Number(pricePerJar) || customerRate;
 
@@ -102,39 +103,22 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
         req.user!.id
       );
 
-      // Notify the specifically assigned staff
+      // Assigned staff only
       notify(() =>
         NotifService.sendToUser({
           userId: assignedStaff.id,
           title:  'New Delivery Assigned! 📦',
-          body:   `Order #${orderId} — ${quantity} jars assigned to you.`,
+          body:   `Order #${orderId} — ${quantity} jars from ${customerName}`,
           type:   'delivery',
           data:   { orderId: String(orderId) },
         })
       );
 
-      // Also notify ALL other active staff so they are aware
-      const otherStaffIds = (staffRows as any[])
-        .slice(1)
-        .map((s: any) => s.id);
-
-      for (const sid of otherStaffIds) {
-        notify(() =>
-          NotifService.sendToUser({
-            userId: sid,
-            title:  'New Order Received 🚚',
-            body:   `Order #${orderId} — ${quantity} jars. Check deliveries.`,
-            type:   'delivery',
-            data:   { orderId: String(orderId) },
-          })
-        );
-      }
-
       notify(() =>
         NotifService.sendToRole(
           'admin',
           'New Order 📦',
-          `Order #${orderId} — ${quantity} jars placed`,
+          `Order #${orderId} — ${quantity} jars from ${customerName}`,
           'order',
           { orderId: String(orderId) }
         )
@@ -144,9 +128,9 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       notify(() =>
         NotifService.sendToRole(
           'admin',
-          '⚠️ No Staff Available',
-          `Order #${orderId} placed but no active staff to assign.`,
-          'delivery',
+          'New Order 📦',
+          `Order #${orderId} — ${quantity} jars from ${customerName} (no staff to assign)`,
+          'order',
           { orderId: String(orderId) }
         )
       );
@@ -309,11 +293,21 @@ export const assignOrder = async (req: AuthRequest, res: Response): Promise<void
     notify(() =>
       NotifService.sendToUser({
         userId: Number(staffId),
-        title:  'New Delivery Assigned',
+        title:  'New Delivery Assigned 📦',
         body:   `Order #${order.id} — ${order.quantity} jars for ${order.customer_name}`,
         type:   'delivery',
         data:   { orderId: String(order.id) },
       })
+    );
+
+    notify(() =>
+      NotifService.sendToRole(
+        'admin',
+        'Order Assigned',
+        `Order #${order.id} assigned to ${staffRows[0].name}`,
+        'order',
+        { orderId: String(order.id) }
+      )
     );
 
     // SSE: notify assigned staff + admin
