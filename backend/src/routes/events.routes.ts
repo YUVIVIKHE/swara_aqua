@@ -43,10 +43,9 @@ router.get('/', (req: Request, res: Response): void => {
   // Register this client
   addClient(userId, role, res);
 
-  // Clean up on disconnect
-  req.on('close', () => {
-    removeClient(res);
-  });
+  const onDisconnect = () => removeClient(res);
+  req.on('close', onDisconnect);
+  res.on('close', onDisconnect);
 });
 
 export default router;

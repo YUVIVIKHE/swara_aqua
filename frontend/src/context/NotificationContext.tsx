@@ -58,6 +58,9 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const prevUnread = useRef(0);
   const fcmRegistered = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const handleIncomingRef = useRef<(typeof handleIncoming) | null>(null);
+  const refreshRef = useRef<(() => Promise<void>) | null>(null);
+  const userRoleRef = useRef(user?.role);
 
   const showBrowserAlert = useCallback((
     title: string,
@@ -183,6 +186,10 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     setPushEnabled(false);
   }, []);
 
+  handleIncomingRef.current = handleIncoming;
+  refreshRef.current = refresh;
+  userRoleRef.current = user?.role;
+
   // Initial load + fallback poll when SSE is down
   useEffect(() => {
     if (!user) {
@@ -203,7 +210,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, sseConnected]);
 
-  // SSE — real-time notification stream
+  // SSE — one connection per login; handlers via refs so we don't reconnect on every render
   useEffect(() => {
     if (!user) {
       eventSourceRef.current?.close();
@@ -214,6 +221,9 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
     const token = localStorage.getItem('accessToken');
     if (!token) return;
+
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
 
     const base = API_ORIGIN ? `${API_ORIGIN}/api` : '/api';
     const url = `${base}/events?token=${encodeURIComponent(token)}`;
@@ -230,9 +240,11 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         const body = data.body || '';
         const type = data.type || 'general';
         const orderId = data.data?.orderId || data.orderId;
-        handleIncoming(title, body, type, true, orderId, true);
-        refresh();
-      } catch { refresh(); }
+        handleIncomingRef.current?.(title, body, type, true, orderId, true);
+        void refreshRef.current?.();
+      } catch {
+        void refreshRef.current?.();
+      }
     });
 
     es.addEventListener('order_created', (ev) => {
@@ -240,25 +252,26 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         const data = JSON.parse((ev as MessageEvent).data);
         const orderId = String(data.orderId || '');
         const qty = data.quantity ?? '';
-        // Staff already get targeted push via sendToUser; admin gets this live alert
-        if (user?.role === 'admin') {
-          handleIncoming(
+        if (userRoleRef.current === 'admin') {
+          handleIncomingRef.current?.(
             'New Order 📦',
             `Order #${orderId}${qty ? ` — ${qty} jars` : ''} placed by customer`,
             'order',
+            true,
             orderId,
             true
           );
-          refresh();
+          void refreshRef.current?.();
         }
       } catch { /* ignore */ }
     });
 
     return () => {
       es.close();
+      if (eventSourceRef.current === es) eventSourceRef.current = null;
       setSseConnected(false);
     };
-  }, [user?.id, handleIncoming, refresh]);
+  }, [user?.id]);
 
   const value: NotificationContextValue = {
     notifications,

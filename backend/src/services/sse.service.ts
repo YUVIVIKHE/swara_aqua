@@ -25,8 +25,18 @@ setInterval(() => {
 
 /**
  * Register a new SSE client connection.
+ * Replaces any existing connection for the same user (tab refresh / React re-mount).
  */
 export const addClient = (userId: number, role: string, res: Response): void => {
+  const stale = clients.filter(c => c.userId === userId);
+  for (const client of stale) {
+    try {
+      client.res.end();
+    } catch {
+      /* already closed */
+    }
+    removeClient(client.res);
+  }
   clients.push({ userId, role, res });
   console.log(`[SSE] Client connected: ${role}#${userId} (total: ${clients.length})`);
 };
